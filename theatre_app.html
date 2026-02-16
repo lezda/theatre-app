@@ -1729,19 +1729,29 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 const selectionStart = fullDisplayText.indexOf(selectedText);
                 
                 if (selectionStart !== -1) {
-                    // Get the text before the selection (up to 200 characters before)
-                    const contextStart = Math.max(0, selectionStart - 200);
-                    const contextText = fullDisplayText.substring(contextStart, selectionStart + selectedText.length);
+                    // Get ALL text before the selection
+                    const textBeforeSelection = fullDisplayText.substring(0, selectionStart);
                     
-                    // Find the last character name before or at the selection
-                    // Split by newlines and look backwards for a character pattern
-                    const lines = contextText.split('\n');
+                    // Split by lines and search backwards for character name
+                    const lines = textBeforeSelection.split('\n');
                     
+                    // Search backwards through all lines to find the last character name
                     for (let i = lines.length - 1; i >= 0; i--) {
-                        const line = lines[i];
+                        const line = lines[i].trim();
+                        
+                        // Skip empty lines
+                        if (!line) continue;
+                        
+                        // Try to detect character from this line
                         const characterMatch = detectCharacterFromSelection(line);
                         if (characterMatch) {
                             return characterMatch;
+                        }
+                        
+                        // If we've gone back more than 100 lines without finding a character,
+                        // we're probably in a different section - stop searching
+                        if (lines.length - i > 100) {
+                            break;
                         }
                     }
                 }
