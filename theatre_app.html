@@ -123,7 +123,20 @@
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
             z-index: 1000;
             min-width: 200px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
+        
+        /* Mobile-specific context menu styles */
+        @media (max-width: 640px) {
+            #contextMenu {
+                max-width: 95vw;
+                max-height: 70vh;
+            }
+        }
+        
         .context-menu-item {
             padding: 0.75rem 1rem;
             cursor: pointer;
@@ -142,6 +155,9 @@
             color: #6b7280;
             background-color: #f9fafb;
             border-bottom: 1px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         .line-completed {
             opacity: 0.5;
@@ -168,6 +184,83 @@
         }
         .slide-in {
             animation: slideIn 0.3s ease-out;
+        }
+        
+        /* ============================================
+           RESPONSIVE MOBILE STYLES
+           ============================================ */
+        
+        @media (max-width: 768px) {
+            /* Make container full width on mobile */
+            .container {
+                max-width: 100%;
+                padding: 0.5rem;
+            }
+            
+            /* Reduce padding in cards */
+            .bg-white.rounded-lg.shadow.p-6 {
+                padding: 1rem !important;
+            }
+            
+            /* Make buttons stack better on small screens */
+            .flex.gap-2 button {
+                font-size: 0.875rem;
+            }
+            
+            /* Smaller text in tabs */
+            button[id^="tab-"] {
+                font-size: 0.75rem;
+                padding: 0.5rem 0.75rem;
+                white-space: nowrap;
+            }
+            
+            /* Make text areas more touch-friendly */
+            textarea, input[type="text"], select {
+                font-size: 16px !important; /* Prevents zoom on iOS */
+                min-height: 44px; /* Touch-friendly size */
+            }
+            
+            /* Make dropdowns easier to tap */
+            select {
+                padding: 0.75rem !important;
+            }
+            
+            /* Smaller headings on mobile */
+            h1 {
+                font-size: 1.5rem !important;
+            }
+            
+            h2 {
+                font-size: 1.25rem !important;
+            }
+            
+            /* Better visualization cards on mobile */
+            .rehearse-line-item {
+                margin: 0.5rem 0 !important;
+                padding: 0.75rem !important;
+            }
+        }
+        
+        /* Touch-friendly improvements */
+        @media (hover: none) and (pointer: coarse) {
+            /* Larger touch targets */
+            button {
+                min-height: 44px;
+            }
+            
+            input[type="checkbox"] {
+                min-height: 20px;
+                min-width: 20px;
+            }
+            
+            /* Remove hover effects on touch devices, add active state */
+            .context-menu-item:hover {
+                background-color: white;
+            }
+            
+            .context-menu-item:active {
+                background-color: #f3f4f6;
+            }
         }
     </style>
 </head>
@@ -1663,10 +1756,53 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 actorsList.appendChild(item);
             });
             
-            // Position and show menu
-            menu.style.left = mouseX + 'px';
-            menu.style.top = mouseY + 'px';
+            // First, show menu temporarily off-screen to measure its actual size
+            menu.style.left = '-9999px';
+            menu.style.top = '-9999px';
             menu.classList.remove('hidden');
+            
+            // Force layout calculation
+            menu.offsetHeight;
+            
+            // Get actual dimensions
+            const menuRect = menu.getBoundingClientRect();
+            const menuWidth = menuRect.width;
+            const menuHeight = menuRect.height;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            
+            // Calculate position
+            let left = mouseX;
+            let top = mouseY;
+            
+            // Adjust horizontal position if menu would go off-screen
+            if (left + menuWidth > viewportWidth - 10) {
+                left = Math.max(10, viewportWidth - menuWidth - 10);
+            }
+            
+            // Adjust vertical position if menu would go off-screen
+            // IMPORTANT: Check if menu is too tall for viewport
+            if (menuHeight > viewportHeight - 20) {
+                // Menu is taller than viewport - position at top with small margin
+                top = 10;
+            } else if (top + menuHeight > viewportHeight - 10) {
+                // Menu would go off bottom - move it up
+                top = Math.max(10, viewportHeight - menuHeight - 10);
+            }
+            
+            // On mobile, center the menu vertically if it fits
+            if (viewportWidth < 640) {
+                left = Math.max(10, (viewportWidth - menuWidth) / 2);
+                if (menuHeight < viewportHeight - 100) {
+                    top = Math.max(60, (viewportHeight - menuHeight) / 2);
+                } else {
+                    top = 10; // If too tall, stick to top
+                }
+            }
+            
+            // Apply final position
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
             contextMenuVisible = true;
         }
 
@@ -2798,92 +2934,18 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
-            // Parse the full text to identify assigned vs unassigned
-            const lines = fullTextContent.split('\n');
-            let currentScene = 'SCÈNE 1';
-            const segments = [];
-            let currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
+            // Get filtered characters based on scene
+            let filteredCharacters = characters;
+            if (sceneFilter) {
+                filteredCharacters = characters.filter(c => c.scene === sceneFilter);
+            }
             
-            // Scene detection pattern
-            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
-            
-            // Character pattern
-            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
-            
-            // Populate scene filter
+            // Populate scene filter dropdown
             const allScenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))];
-            const detectedScenes = [];
-            
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const trimmedLine = line.trim();
-                
-                if (!trimmedLine) continue;
-                
-                // Check for scene marker
-                const sceneMatch = trimmedLine.match(scenePattern);
-                if (sceneMatch) {
-                    // Save current segment
-                    if (currentSegment.text.trim()) {
-                        segments.push(currentSegment);
-                    }
-                    currentScene = trimmedLine;
-                    if (!detectedScenes.includes(currentScene)) {
-                        detectedScenes.push(currentScene);
-                    }
-                    currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
-                    continue;
-                }
-                
-                // Check for character line
-                const charMatch = trimmedLine.match(characterPattern);
-                if (charMatch) {
-                    const characterName = charMatch[1].trim();
-                    const lineText = charMatch[2];
-                    
-                    // Check if this line is part of an assigned character
-                    const assigned = characters.find(c => 
-                        c.name === characterName && 
-                        c.text.includes(trimmedLine) &&
-                        (c.scene || 'SCÈNE 1') === currentScene
-                    );
-                    
-                    if (assigned) {
-                        // Save previous unassigned segment
-                        if (currentSegment.text.trim()) {
-                            segments.push(currentSegment);
-                        }
-                        
-                        // Create assigned segment
-                        const assignedText = removeCharacterNameFromText(assigned.text, assigned.name);
-                        segments.push({
-                            type: 'assigned',
-                            text: assignedText,
-                            scene: currentScene,
-                            character: assigned.name,
-                            actor: assigned.actor
-                        });
-                        
-                        currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
-                        continue;
-                    }
-                }
-                
-                // Add line to current segment
-                currentSegment.text += (currentSegment.text ? '\n' : '') + line;
-                currentSegment.lines.push(line);
-            }
-            
-            // Save final segment
-            if (currentSegment.text.trim()) {
-                segments.push(currentSegment);
-            }
-            
-            // Update scene filter dropdown
             const sceneFilterSelect = document.getElementById('comparisonSceneFilter');
             const currentValue = sceneFilterSelect.value;
             sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
-            [...new Set([...allScenes, ...detectedScenes])].sort().forEach(scene => {
+            allScenes.sort().forEach(scene => {
                 const option = document.createElement('option');
                 option.value = scene;
                 option.textContent = scene;
@@ -2891,20 +2953,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             });
             if (currentValue) sceneFilterSelect.value = currentValue;
             
-            // Filter segments by scene if needed
-            let filteredSegments = segments;
-            if (sceneFilter) {
-                filteredSegments = segments.filter(s => s.scene === sceneFilter);
-            }
+            // Calculate statistics  
+            const assignedWords = filteredCharacters.reduce((sum, c) => sum + countWords(removeCharacterNameFromText(c.text, c.name)), 0);
             
-            // Calculate statistics
-            const assignedWords = filteredSegments
-                .filter(s => s.type === 'assigned')
-                .reduce((sum, s) => sum + countWords(s.text), 0);
-            
-            const unassignedWords = filteredSegments
-                .filter(s => s.type === 'unassigned')
-                .reduce((sum, s) => sum + countWords(s.text), 0);
+            const totalLines = fullTextContent.split('\n');
+            const allTextWords = countWords(fullTextContent);
+            const unassignedWords = Math.max(0, allTextWords - assignedWords);
             
             const totalWords = assignedWords + unassignedWords;
             const percentAssigned = totalWords > 0 ? ((assignedWords / totalWords) * 100).toFixed(1) : 0;
@@ -2931,59 +2985,49 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 </div>
             `;
             
+            // Simple approach: just show all assignments in order
+            // Group by scene
+            const sceneGroups = {};
+            filteredCharacters.forEach(char => {
+                const scene = char.scene || 'SCÈNE 1';
+                if (!sceneGroups[scene]) {
+                    sceneGroups[scene] = [];
+                }
+                sceneGroups[scene].push(char);
+            });
+            
             // Display segments
             let html = '';
-            let currentSceneDisplay = '';
             
-            filteredSegments.forEach(segment => {
-                // Show scene header
-                if (segment.scene !== currentSceneDisplay) {
-                    html += `
-                        <div class="text-xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2 mt-4 mb-2">
-                            ${segment.scene}
-                        </div>
-                    `;
-                    currentSceneDisplay = segment.scene;
-                }
+            for (const [sceneName, sceneChars] of Object.entries(sceneGroups)) {
+                html += `
+                    <div class="text-xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2 mt-4 mb-2">
+                        ${sceneName}
+                    </div>
+                `;
                 
-                if (segment.type === 'assigned') {
-                    // Assigned segment
-                    const color = getActorColor(segment.actor);
+                sceneChars.forEach(char => {
+                    const cleanedText = removeCharacterNameFromText(char.text, char.name);
+                    const color = getActorColor(char.actor);
+                    const wordCount = countWords(cleanedText);
+                    
                     html += `
                         <div style="background-color: ${color}22; border-left: 4px solid ${color}; padding: 12px; margin: 8px 0; border-radius: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <div style="font-weight: bold; color: ${color};">
-                                    ✅ ${segment.character} (${segment.actor})
+                                    ✅ ${char.name} (${char.actor})
                                 </div>
                                 <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                                    ${countWords(segment.text)} mots
+                                    ${wordCount} mots
                                 </span>
                             </div>
-                            <div style="color: #1f2937;">${segment.text.replace(/\n/g, '<br>')}</div>
+                            <div style="color: #1f2937;">${cleanedText.replace(/\n/g, '<br>')}</div>
                         </div>
                     `;
-                } else {
-                    // Unassigned segment
-                    const wordCount = countWords(segment.text);
-                    if (wordCount > 0) {
-                        html += `
-                            <div style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 12px; margin: 8px 0; border-radius: 6px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <div style="font-weight: bold; color: #6b7280;">
-                                        ⏳ Texte non attribué
-                                    </div>
-                                    <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
-                                        ${wordCount} mots
-                                    </span>
-                                </div>
-                                <div style="color: #4b5563; font-style: italic;">${segment.text.replace(/\n/g, '<br>')}</div>
-                            </div>
-                        `;
-                    }
-                }
-            });
+                });
+            }
             
-            content.innerHTML = html || '<p class="text-gray-400 italic">Aucun contenu à afficher pour cette scène.</p>';
+            content.innerHTML = html || '<p class="text-gray-400 italic">Aucune attribution à afficher pour cette scène.</p>';
         }
 
         function updateStats() {
