@@ -261,6 +261,28 @@
             .context-menu-item:active {
                 background-color: #f3f4f6;
             }
+            
+            /* Mobile assign button active state */
+            #mobileAssignButton:active {
+                background-color: #2563eb !important;
+                transform: scale(0.95);
+            }
+        }
+        
+        /* Mobile assign button animation */
+        #mobileAssignButton {
+            animation: fadeInUp 0.2s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
@@ -1518,14 +1540,127 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             // Add selection and right-click listeners
             const textDisplay = document.getElementById('textDisplay');
             textDisplay.addEventListener('mouseup', handleTextSelection);
-            textDisplay.addEventListener('contextmenu', handleRightClick);
+            
+            // Different behavior for mobile vs desktop
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+            
+            if (isMobile) {
+                // On mobile: show floating button after selection
+                textDisplay.addEventListener('touchend', handleMobileTextSelection);
+            } else {
+                // On desktop: traditional right-click
+                textDisplay.addEventListener('contextmenu', handleRightClick);
+            }
             
             // Close context menu on click outside
-            document.addEventListener('click', closeContextMenu);
+            document.addEventListener('click', (e) => {
+                closeContextMenu();
+                // Also hide assign button if clicking outside
+                if (e.target.id !== 'mobileAssignButton') {
+                    hideAssignButton();
+                }
+            });
             
             // Save to Firebase
             saveToFirebase();
             saveToLocalStorage();
+        }
+        
+        function handleMobileTextSelection(e) {
+            // Wait a bit for selection to complete
+            setTimeout(() => {
+                const selection = window.getSelection();
+                const selectedText = selection.toString().trim();
+                
+                if (!selectedText) {
+                    hideAssignButton();
+                    return;
+                }
+                
+                if (actors.length === 0) {
+                    return;
+                }
+                
+                // Get selection position
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                
+                // Show floating button near selection
+                showAssignButton(rect.left, rect.bottom);
+            }, 100);
+        }
+        
+        function showAssignButton(x, y) {
+            let btn = document.getElementById('mobileAssignButton');
+            
+            if (!btn) {
+                // Create button if it doesn't exist
+                btn = document.createElement('button');
+                btn.id = 'mobileAssignButton';
+                btn.innerHTML = '✓ Attribuer';
+                btn.style.cssText = `
+                    position: fixed;
+                    background: #3b82f6;
+                    color: white;
+                    border: none;
+                    border-radius: 20px;
+                    padding: 10px 20px;
+                    font-weight: bold;
+                    font-size: 16px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    z-index: 999;
+                    cursor: pointer;
+                    min-height: 44px;
+                `;
+                
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    // Trigger the context menu
+                    const selection = window.getSelection();
+                    selectedText = selection.toString().trim();
+                    
+                    if (!selectedText) return;
+                    
+                    const detectedCharacter = detectCharacterFromContext(selection);
+                    mouseX = window.innerWidth / 2; // Center on mobile
+                    mouseY = 100; // Near top
+                    
+                    showContextMenu(detectedCharacter);
+                    hideAssignButton();
+                };
+                
+                document.body.appendChild(btn);
+            }
+            
+            // Position button
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const btnWidth = 120;
+            
+            let left = x;
+            let top = y + 10;
+            
+            // Keep button on screen
+            if (left + btnWidth > viewportWidth - 10) {
+                left = viewportWidth - btnWidth - 10;
+            }
+            if (left < 10) {
+                left = 10;
+            }
+            if (top > viewportHeight - 60) {
+                top = y - 54; // Show above selection
+            }
+            
+            btn.style.left = left + 'px';
+            btn.style.top = top + 'px';
+            btn.style.display = 'block';
+        }
+        
+        function hideAssignButton() {
+            const btn = document.getElementById('mobileAssignButton');
+            if (btn) {
+                btn.style.display = 'none';
+            }
         }
 
         function handleRightClick(e) {
