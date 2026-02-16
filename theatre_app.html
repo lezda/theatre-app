@@ -940,8 +940,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 `;
             }).join('');
             
+            // Sort characters by their position in the original text
+            const sortedCharacters = sortCharactersByTextOrder(characters);
+            
             // Populate scene filter
-            const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
+            const scenes = sortScenes([...new Set(sortedCharacters.map(c => c.scene || 'SCÈNE 1'))]);
+            
             const sceneFilterSelect = document.getElementById('visualSceneFilter');
             const currentSceneValue = sceneFilterSelect.value;
             sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
@@ -956,9 +960,9 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             }
             
             // Filter characters by scene if needed
-            let filteredChars = characters;
+            let filteredChars = sortedCharacters;
             if (sceneFilter) {
-                filteredChars = characters.filter(c => c.scene === sceneFilter);
+                filteredChars = sortedCharacters.filter(c => c.scene === sceneFilter);
             }
             
             // Build a map of all cleaned texts with their actors
@@ -2541,6 +2545,85 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             return text.trim().split(/\s+/).filter(w => w.length > 0).length;
         }
         
+        function sortCharactersByTextOrder(chars) {
+            // Sort characters by their position in the original text and scene order
+            return [...chars].sort((a, b) => {
+                // First sort by scene
+                const sceneA = a.scene || 'SCÈNE 1';
+                const sceneB = b.scene || 'SCÈNE 1';
+                
+                // Extract scene numbers for proper sorting
+                const getSceneOrder = (sceneName) => {
+                    // Handle different scene formats
+                    if (sceneName.includes('PROLOGUE')) return 0;
+                    if (sceneName.includes('PREMIÈRE PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 1000 + parseInt(match[1]) : 1000;
+                    }
+                    if (sceneName.includes('INTERMÈDE') || sceneName.includes('INTERMEDE')) return 5000;
+                    if (sceneName.includes('DEUXIÈME PARTIE') || sceneName.includes('SECONDE PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 10000 + parseInt(match[1]) : 10000;
+                    }
+                    if (sceneName.includes('TROISIÈME PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 15000 + parseInt(match[1]) : 15000;
+                    }
+                    if (sceneName.includes('ÉPILOGUE') || sceneName.includes('EPILOGUE')) return 20000;
+                    
+                    // Default: extract number
+                    const match = sceneName.match(/(\d+)/);
+                    return match ? parseInt(match[1]) : 0;
+                };
+                
+                const orderA = getSceneOrder(sceneA);
+                const orderB = getSceneOrder(sceneB);
+                
+                if (orderA !== orderB) {
+                    return orderA - orderB;
+                }
+                
+                // Within same scene, try to sort by position in full text
+                if (fullTextContent) {
+                    const posA = fullTextContent.indexOf(a.text);
+                    const posB = fullTextContent.indexOf(b.text);
+                    
+                    if (posA !== -1 && posB !== -1) {
+                        return posA - posB;
+                    }
+                }
+                
+                // Fallback: keep original order
+                return 0;
+            });
+        }
+        
+        function sortScenes(scenes) {
+            // Sort scene names in logical order
+            return [...scenes].sort((a, b) => {
+                const getSceneOrder = (sceneName) => {
+                    if (sceneName.includes('PROLOGUE')) return 0;
+                    if (sceneName.includes('PREMIÈRE PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 1000 + parseInt(match[1]) : 1000;
+                    }
+                    if (sceneName.includes('INTERMÈDE') || sceneName.includes('INTERMEDE')) return 5000;
+                    if (sceneName.includes('DEUXIÈME PARTIE') || sceneName.includes('SECONDE PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 10000 + parseInt(match[1]) : 10000;
+                    }
+                    if (sceneName.includes('TROISIÈME PARTIE')) {
+                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                        return match ? 15000 + parseInt(match[1]) : 15000;
+                    }
+                    if (sceneName.includes('ÉPILOGUE') || sceneName.includes('EPILOGUE')) return 20000;
+                    const match = sceneName.match(/(\d+)/);
+                    return match ? parseInt(match[1]) : 0;
+                };
+                return getSceneOrder(a) - getSceneOrder(b);
+            });
+        }
+        
         function updateRate(value) {
             document.getElementById('rateValue').textContent = value;
         }
@@ -3070,17 +3153,17 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             }
             
             // Get filtered characters based on scene
-            let filteredCharacters = characters;
+            let filteredCharacters = sortCharactersByTextOrder(characters);
             if (sceneFilter) {
-                filteredCharacters = characters.filter(c => c.scene === sceneFilter);
+                filteredCharacters = filteredCharacters.filter(c => c.scene === sceneFilter);
             }
             
             // Populate scene filter dropdown
-            const allScenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))];
+            const allScenes = sortScenes([...new Set(characters.map(c => c.scene || 'SCÈNE 1'))]);
             const sceneFilterSelect = document.getElementById('comparisonSceneFilter');
             const currentValue = sceneFilterSelect.value;
             sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
-            allScenes.sort().forEach(scene => {
+            allScenes.forEach(scene => {
                 const option = document.createElement('option');
                 option.value = scene;
                 option.textContent = scene;
