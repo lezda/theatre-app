@@ -764,13 +764,38 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             const legend = document.getElementById('colorLegend');
             const sceneFilter = document.getElementById('visualSceneFilter').value;
             
-            if (characters.length === 0) {
-                visualText.innerHTML = '<p class="text-gray-400 italic">Aucune attribution n\'a été créée. Veuillez d\'abord attribuer des textes aux acteurs.</p>';
+            // Build legend for actors
+            legend.innerHTML = actors.map(actor => {
+                const color = getActorColor(actor);
+                return `
+                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
+                        <div class="w-6 h-6 rounded" style="background-color: ${color};"></div>
+                        <span class="font-semibold text-sm">${actor}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add legend item for unassigned text
+            if (fullTextContent && fullTextContent.trim()) {
+                legend.innerHTML += `
+                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
+                        <div class="w-6 h-6 rounded bg-gray-200"></div>
+                        <span class="font-semibold text-sm text-gray-600">Texte non attribué</span>
+                    </div>
+                `;
+            }
+            
+            // If no text at all, show message
+            if (characters.length === 0 && (!fullTextContent || !fullTextContent.trim())) {
+                visualText.innerHTML = '<p class="text-gray-400 italic">Aucune attribution n\'a été créée et aucun texte n\'a été chargé.</p>';
                 return;
             }
             
-            // Populate scene filter
-            const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
+            // Build complete script with assigned and unassigned text
+            const completeScript = buildCompleteScriptForVisualization();
+            
+            // Populate scene filter from complete script
+            const scenes = [...new Set(completeScript.map(item => item.scene))].sort();
             const sceneFilterSelect = document.getElementById('visualSceneFilter');
             const currentSceneValue = sceneFilterSelect.value;
             sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
@@ -784,79 +809,33 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 sceneFilterSelect.value = currentSceneValue;
             }
             
-            // Build legend
-            legend.innerHTML = actors.map(actor => {
-                const color = getActorColor(actor);
-                return `
-                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
-                        <div class="w-6 h-6 rounded" style="background-color: ${color};"></div>
-                        <span class="font-semibold text-sm">${actor}</span>
-                    </div>
-                `;
-            }).join('');
-            
-            // Filter characters by scene if needed
-            let filteredChars = characters;
+            // Filter by scene if needed
+            let filteredScript = completeScript;
             if (sceneFilter) {
-                filteredChars = characters.filter(c => c.scene === sceneFilter);
+                filteredScript = completeScript.filter(item => item.scene === sceneFilter);
             }
             
-            // Build a map of all cleaned texts with their actors
-            const allTexts = filteredChars.map((char, idx) => ({
-                original: char,
-                cleaned: removeCharacterNameFromText(char.text, char.name).trim(),
-                index: idx
-            }));
-            
-            // Build visualization with overlap detection
+            // Build visualization HTML with chorus detection
             let html = '';
             let currentScene = '';
             let processedIndices = new Set();
             
-            allTexts.forEach((item, mainIdx) => {
+            filteredScript.forEach((item, mainIdx) => {
                 if (processedIndices.has(mainIdx)) return;
                 
-                const char = item.original;
-                const cleanedText = item.cleaned;
-                
-                // Find all speakers who say this EXACT text or texts that CONTAIN this text
-                const relatedSpeakers = [];
-                
-                allTexts.forEach((otherItem, otherIdx) => {
-                    const otherCleaned = otherItem.cleaned;
-                    
-                    // Check for exact match OR if one contains the other
-                    if (cleanedText === otherCleaned || 
-                        (cleanedText.length > 3 && otherCleaned.includes(cleanedText)) ||
-                        (otherCleaned.length > 3 && cleanedText.includes(otherCleaned))) {
-                        
-                        relatedSpeakers.push({
-                            actor: otherItem.original.actor,
-                            character: otherItem.original.character,
-                            text: otherCleaned,
-                            index: otherIdx
-                        });
-                        processedIndices.add(otherIdx);
-                    }
-                });
-                
-                const uniqueActors = [...new Set(relatedSpeakers.map(s => s.actor))];
-                const isChorus = uniqueActors.length > 1;
-                
                 // Show scene headers with editable notes
-                const charScene = char.scene || 'SCÈNE 1';
-                if (charScene !== currentScene) {
-                    const sceneNote = sceneNotes[charScene] || '';
+                if (item.scene !== currentScene) {
+                    const sceneNote = sceneNotes[item.scene] || '';
                     html += `
                         <div class="mb-4 mt-6">
-                            <div class="text-2xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2">${charScene}</div>
+                            <div class="text-2xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2">${item.scene}</div>
                             <div class="mt-2 p-3 bg-amber-50 rounded-lg border-l-4 border-amber-500">
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="text-sm font-bold text-amber-900">🎬 Notes de mise en scène:</span>
                                 </div>
                                 <textarea 
-                                    id="scene-note-${charScene.replace(/\s+/g, '-')}" 
-                                    onchange="saveSceneNote('${charScene}', this.value)"
+                                    id="scene-note-${item.scene.replace(/\s+/g, '-')}" 
+                                    onchange="saveSceneNote('${item.scene}', this.value)"
                                     placeholder="Ajoutez des notes de mise en scène pour cette scène (décor, ambiance, déplacements, intentions...)"
                                     class="w-full p-2 border rounded text-sm resize-y"
                                     rows="3"
@@ -865,46 +844,86 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                             </div>
                         </div>
                     `;
-                    currentScene = charScene;
+                    currentScene = item.scene;
                 }
                 
-                let style = '';
-                let characterLabel = '';
-                
-                if (isChorus) {
-                    // Multi-color gradient for chorus
-                    const gradientColors = uniqueActors.map(a => getActorColor(a)).join(', ');
-                    style = `background: linear-gradient(135deg, ${gradientColors}); color: white; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin: 6px 0; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.2);`;
-                    
-                    // Show all character names involved
-                    const characterNames = [...new Set(relatedSpeakers.map(s => s.character))];
-                    characterLabel = characterNames.join(' + ');
-                } else {
-                    // Single color for single actor
-                    const color = getActorColor(uniqueActors[0]);
-                    style = `background-color: ${color}22; border-left: 4px solid ${color}; padding: 8px 12px; margin: 6px 0; border-radius: 4px; display: block;`;
-                    characterLabel = char.name;
-                }
-                
-                const actorLabel = isChorus 
-                    ? `🎭 ${uniqueActors.join(' + ')}` 
-                    : uniqueActors[0];
-                
-                // Use the longest version of the text for display
-                const displayText = relatedSpeakers.reduce((longest, curr) => 
-                    curr.text.length > longest.length ? curr.text : longest, cleanedText);
-                
-                html += `
-                    <div style="${style}">
-                        <div style="font-weight: bold; margin-bottom: 4px; ${isChorus ? 'color: white;' : `color: ${getActorColor(uniqueActors[0])};`}">
-                            ${characterLabel} (${actorLabel})
+                if (item.type === 'unassigned') {
+                    // Display unassigned text
+                    html += `
+                        <div style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 8px 12px; margin: 6px 0; border-radius: 4px; display: block;">
+                            <div style="font-weight: bold; margin-bottom: 4px; color: #6b7280;">
+                                Texte non attribué
+                            </div>
+                            <div style="color: #4b5563; font-style: italic;">${item.text}</div>
                         </div>
-                        <div style="${isChorus ? 'color: white;' : 'color: #1f2937;'}">${displayText}</div>
-                    </div>
-                `;
+                    `;
+                    processedIndices.add(mainIdx);
+                } else {
+                    // Assigned text - check for chorus
+                    const relatedSpeakers = [];
+                    
+                    filteredScript.forEach((otherItem, otherIdx) => {
+                        if (otherItem.type !== 'assigned') return;
+                        
+                        const otherCleaned = otherItem.cleanedText;
+                        const cleanedText = item.cleanedText;
+                        
+                        // Check for exact match OR if one contains the other
+                        if (cleanedText === otherCleaned || 
+                            (cleanedText.length > 3 && otherCleaned.includes(cleanedText)) ||
+                            (otherCleaned.length > 3 && cleanedText.includes(otherCleaned))) {
+                            
+                            relatedSpeakers.push({
+                                actor: otherItem.actor,
+                                character: otherItem.name,
+                                text: otherCleaned,
+                                index: otherIdx
+                            });
+                            processedIndices.add(otherIdx);
+                        }
+                    });
+                    
+                    const uniqueActors = [...new Set(relatedSpeakers.map(s => s.actor))];
+                    const isChorus = uniqueActors.length > 1;
+                    
+                    let style = '';
+                    let characterLabel = '';
+                    
+                    if (isChorus) {
+                        // Multi-color gradient for chorus
+                        const gradientColors = uniqueActors.map(a => getActorColor(a)).join(', ');
+                        style = `background: linear-gradient(135deg, ${gradientColors}); color: white; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin: 6px 0; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.2);`;
+                        
+                        // Show all character names involved
+                        const characterNames = [...new Set(relatedSpeakers.map(s => s.character))];
+                        characterLabel = characterNames.join(' + ');
+                    } else {
+                        // Single color for single actor
+                        const color = getActorColor(uniqueActors[0]);
+                        style = `background-color: ${color}22; border-left: 4px solid ${color}; padding: 8px 12px; margin: 6px 0; border-radius: 4px; display: block;`;
+                        characterLabel = item.name;
+                    }
+                    
+                    const actorLabel = isChorus 
+                        ? `🎭 ${uniqueActors.join(' + ')}` 
+                        : uniqueActors[0];
+                    
+                    // Use the longest version of the text for display
+                    const displayText = relatedSpeakers.reduce((longest, curr) => 
+                        curr.text.length > longest.length ? curr.text : longest, item.cleanedText);
+                    
+                    html += `
+                        <div style="${style}">
+                            <div style="font-weight: bold; margin-bottom: 4px; ${isChorus ? 'color: white;' : `color: ${getActorColor(uniqueActors[0])};`}">
+                                ${characterLabel} (${actorLabel})
+                            </div>
+                            <div style="${isChorus ? 'color: white;' : 'color: #1f2937;'}">${displayText}</div>
+                        </div>
+                    `;
+                }
             });
             
-            visualText.innerHTML = html || '<p class="text-gray-400 italic">Aucune réplique à afficher pour cette scène.</p>';
+            visualText.innerHTML = html || '<p class="text-gray-400 italic">Aucun texte à afficher.</p>';
         }
 
         function saveSceneNote(sceneName, noteText) {
@@ -2080,6 +2099,120 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
 
         function countWords(text) {
             return text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        }
+        
+        function buildCompleteScriptForVisualization() {
+            // Build a complete script mixing assigned characters and unassigned text
+            const script = [];
+            
+            if (!fullTextContent || !fullTextContent.trim()) {
+                // No full text loaded, just return assigned characters
+                return characters.map(char => ({
+                    type: 'assigned',
+                    scene: char.scene || 'SCÈNE 1',
+                    name: char.name,
+                    actor: char.actor,
+                    text: char.text,
+                    cleanedText: removeCharacterNameFromText(char.text, char.name).trim()
+                }));
+            }
+            
+            const lines = fullTextContent.split('\n');
+            let currentScene = 'SCÈNE 1';
+            let currentSegment = '';
+            let segmentStartLine = 0;
+            
+            // Scene detection pattern
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            // Character pattern
+            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmedLine = line.trim();
+                
+                // Skip empty lines
+                if (!trimmedLine) {
+                    continue;
+                }
+                
+                // Check for scene marker
+                const sceneMatch = trimmedLine.match(scenePattern);
+                if (sceneMatch) {
+                    // Save previous unassigned segment if any
+                    if (currentSegment.trim()) {
+                        script.push({
+                            type: 'unassigned',
+                            scene: currentScene,
+                            text: currentSegment.trim(),
+                            lineNumber: segmentStartLine
+                        });
+                        currentSegment = '';
+                    }
+                    
+                    currentScene = trimmedLine;
+                    continue;
+                }
+                
+                // Check for character line
+                const charMatch = trimmedLine.match(characterPattern);
+                if (charMatch) {
+                    const characterName = charMatch[1].trim();
+                    const lineText = charMatch[2];
+                    
+                    // Check if this has been assigned
+                    const assigned = characters.find(c => 
+                        c.name === characterName && 
+                        c.text.includes(lineText) &&
+                        (c.scene || 'SCÈNE 1') === currentScene
+                    );
+                    
+                    if (assigned) {
+                        // Save previous unassigned segment
+                        if (currentSegment.trim()) {
+                            script.push({
+                                type: 'unassigned',
+                                scene: currentScene,
+                                text: currentSegment.trim(),
+                                lineNumber: segmentStartLine
+                            });
+                            currentSegment = '';
+                        }
+                        
+                        // Add assigned character
+                        script.push({
+                            type: 'assigned',
+                            scene: assigned.scene || currentScene,
+                            name: assigned.name,
+                            actor: assigned.actor,
+                            text: assigned.text,
+                            cleanedText: removeCharacterNameFromText(assigned.text, assigned.name).trim(),
+                            lineNumber: i
+                        });
+                    } else {
+                        // This is unassigned character text
+                        currentSegment += (currentSegment ? '\n' : '') + line;
+                        if (!currentSegment || segmentStartLine === 0) segmentStartLine = i;
+                    }
+                } else {
+                    // Regular text line
+                    currentSegment += (currentSegment ? '\n' : '') + line;
+                    if (!currentSegment || segmentStartLine === 0) segmentStartLine = i;
+                }
+            }
+            
+            // Add final segment if any
+            if (currentSegment.trim()) {
+                script.push({
+                    type: 'unassigned',
+                    scene: currentScene,
+                    text: currentSegment.trim(),
+                    lineNumber: segmentStartLine
+                });
+            }
+            
+            return script;
         }
         
         function updateRate(value) {
