@@ -1,0 +1,2641 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistant de Répétition Théâtrale</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        /* Better cursor visibility */
+        * {
+            cursor: default;
+        }
+        
+        button, a, [onclick], label[for], select, input[type="checkbox"], input[type="range"] {
+            cursor: pointer !important;
+        }
+        
+        input[type="text"], textarea, select {
+            cursor: text !important;
+        }
+        
+        /* Larger, more visible cursor for text areas - ALWAYS RED AND THICK */
+        #textDisplay, #fullText, input[type="text"], textarea, select, #selectionCharacter {
+            cursor: text;
+            caret-color: #ef4444;
+        }
+        
+        /* Force red cursor everywhere - more aggressive */
+        * {
+            caret-color: #ef4444 !important;
+        }
+        
+        /* Make input fields very visible when focused */
+        input[type="text"]:focus, textarea:focus, #fullText:focus, #textDisplay:focus {
+            outline: 3px solid #dc2626;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+        }
+        
+        /* Simulate thicker cursor with animation */
+        @keyframes blink {
+            0%, 49% { 
+                border-right: 3px solid #ef4444;
+            }
+            50%, 100% { 
+                border-right: 3px solid transparent;
+            }
+        }
+        
+        /* Larger font in text areas for better visibility */
+        #fullText {
+            font-size: 16px;
+            line-height: 1.6;
+            font-weight: 500;
+        }
+        
+        #textDisplay {
+            font-size: 15px;
+            line-height: 1.7;
+        }
+        
+        #selectionCharacter, input[type="text"] {
+            font-size: 15px;
+            font-weight: 500;
+        }
+        
+        /* Custom cursor for selectable text - crosshair makes selection clearer */
+        #textDisplay {
+            cursor: crosshair;
+        }
+        
+        /* Bright yellow selection background - EVERYWHERE */
+        ::selection {
+            background-color: #fde047;
+            color: #000;
+        }
+        
+        ::-moz-selection {
+            background-color: #fde047;
+            color: #000;
+        }
+        
+        #textDisplay::selection {
+            background-color: #fde047;
+            color: #000;
+        }
+        
+        #textDisplay::-moz-selection {
+            background-color: #fde047;
+            color: #000;
+        }
+        
+        /* Make sure cursor is visible in selection area */
+        #textDisplay:focus {
+            background-color: #fffef0;
+        }
+        
+        .speaking { 
+            background-color: #fef3c7 !important; 
+            animation: pulse 0.5s ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        #contextMenu {
+            position: fixed;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            min-width: 200px;
+        }
+        .context-menu-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .context-menu-item:last-child {
+            border-bottom: none;
+        }
+        .context-menu-item:hover {
+            background-color: #f3f4f6;
+        }
+        .context-menu-header {
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: #6b7280;
+            background-color: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .line-completed {
+            opacity: 0.5;
+            background-color: #f0fdf4 !important;
+        }
+        .line-current {
+            background-color: #dbeafe !important;
+            border-left: 4px solid #3b82f6 !important;
+            transform: scale(1.02);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .line-upcoming {
+            opacity: 1;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(-10px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Context Menu -->
+    <div id="contextMenu" class="hidden">
+        <div class="context-menu-header">Attribuer à un acteur</div>
+        <div id="contextMenuActors"></div>
+    </div>
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">🎭 Assistant de Répétition Théâtrale</h1>
+        
+        <!-- Tabs -->
+        <div class="flex space-x-2 mb-6 border-b">
+            <button onclick="switchTab('import')" id="tab-import" class="px-4 py-2 font-semibold border-b-2 border-blue-500 text-blue-600">
+                Texte Complet
+            </button>
+            <button onclick="switchTab('setup')" id="tab-setup" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+                Configuration
+            </button>
+            <button onclick="switchTab('visual')" id="tab-visual" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+                🎨 Visualisation
+            </button>
+            <button onclick="switchTab('rehearse')" id="tab-rehearse" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+                Répétition
+            </button>
+            <button onclick="switchTab('stats')" id="tab-stats" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+                Statistiques
+            </button>
+        </div>
+
+        <!-- Import Tab -->
+        <div id="content-import" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">📄 Importer le texte de la pièce</h2>
+                <textarea id="fullText" placeholder="Collez ici le texte complet de votre pièce...
+
+Exemple de format reconnu:
+HAMLET: Être ou ne pas être, telle est la question.
+OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
+" rows="15"
+                          class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+                <div class="flex gap-2 mt-3">
+                    <button onclick="loadFullText()" class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        Charger le texte
+                    </button>
+                    <button onclick="autoDetectCharacters()" class="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                        🤖 Détecter personnages automatiquement
+                    </button>
+                </div>
+            </div>
+
+            <div id="detectionPanel" class="bg-white rounded-lg shadow p-6 hidden">
+                <h2 class="text-xl font-bold mb-4">✨ Personnages détectés</h2>
+                
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                    <p class="text-sm font-semibold text-blue-900 mb-2">📌 Instructions:</p>
+                    <ol class="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                        <li>Vérifiez les personnages détectés ci-dessous</li>
+                        <li>Assignez un acteur à chaque personnage</li>
+                        <li>Cliquez sur "Créer toutes les attributions" pour finaliser</li>
+                    </ol>
+                </div>
+
+                <div id="detectedCharactersList" class="space-y-3 mb-4"></div>
+
+                <button onclick="createAllAssignments()" class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                    ✓ Créer toutes les attributions
+                </button>
+            </div>
+
+            <div id="selectionPanel" class="bg-white rounded-lg shadow p-6 hidden">
+                <h2 class="text-xl font-bold mb-4">✂️ Sélectionner et Attribuer (Mode Manuel)</h2>
+                
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                    <p class="text-sm font-semibold text-blue-900 mb-2">📌 Instructions:</p>
+                    <ol class="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                        <li>Sélectionnez un passage de texte ci-dessous avec votre souris</li>
+                        <li><strong>Clic droit</strong> sur la sélection pour attribuer rapidement à un acteur</li>
+                        <li>Le personnage est automatiquement détecté du texte (si format: PERSONNAGE: texte)</li>
+                        <li>OU utilisez les champs manuels ci-dessous</li>
+                    </ol>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                    <div>
+                        <label class="block text-sm font-semibold mb-2">Personnage:</label>
+                        <input type="text" id="selectionCharacter" placeholder="Nom du personnage"
+                               class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-2">Acteur:</label>
+                        <select id="selectionActor" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Sélectionner un acteur</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="assignSelection()" class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                            Attribuer la sélection
+                        </button>
+                    </div>
+                </div>
+
+                <div id="selectedTextPreview" class="mb-4 p-3 bg-yellow-50 rounded-lg border border-yellow-300" style="min-height: 80px;">
+                    <div id="previewContent" class="hidden">
+                        <p class="text-sm font-semibold text-yellow-900 mb-1">Texte sélectionné:</p>
+                        <p id="previewText" class="text-sm text-gray-700 italic"></p>
+                    </div>
+                    <div id="previewPlaceholder" class="text-sm text-gray-400 italic">
+                        Sélectionnez du texte pour voir un aperçu ici...
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <div id="textDisplay" class="p-4 border-2 border-gray-300 rounded-lg bg-gray-50 whitespace-pre-wrap font-mono text-sm max-h-96 overflow-y-auto select-text cursor-text">
+                    </div>
+                </div>
+
+                <div class="mt-6">
+                    <h3 class="font-bold mb-3">📋 Attributions créées:</h3>
+                    <div id="assignmentsList" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup Tab -->
+        <div id="content-setup" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Acteurs</h2>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="actorName" placeholder="Nom de l'acteur" 
+                           class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button onclick="addActor()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        Ajouter
+                    </button>
+                </div>
+                <div id="actorsList" class="space-y-2"></div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Personnages et Textes</h2>
+                <div class="space-y-3">
+                    <input type="text" id="characterName" placeholder="Nom du personnage" 
+                           class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select id="characterActor" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Sélectionner un acteur</option>
+                    </select>
+                    <textarea id="characterText" placeholder="Texte du personnage" rows="4"
+                              class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    <button onclick="addCharacter()" class="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                        Ajouter Personnage/Texte
+                    </button>
+                </div>
+                <div id="charactersList" class="mt-6 space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- Visualization Tab -->
+        <div id="content-visual" class="hidden space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">🎨 Visualisation du texte avec attributions</h2>
+                    <div class="flex gap-2">
+                        <button onclick="exportToPDF()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                            📄 Exporter PDF
+                        </button>
+                        <button onclick="updateVisualization()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                            🔄 Actualiser
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="mb-4 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="font-bold mb-2">Légende des couleurs:</h3>
+                    <div id="colorLegend" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        <!-- Will be populated dynamically -->
+                    </div>
+                    <div class="mt-3 p-2 bg-purple-50 border-l-4 border-purple-500">
+                        <p class="text-sm"><strong>🎭 Répliques en chœur</strong> (plusieurs acteurs) = Dégradé violet/arc-en-ciel</p>
+                    </div>
+                </div>
+                
+                <!-- Scene filter for visualization -->
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Filtrer par scène:</label>
+                    <select id="visualSceneFilter" onchange="updateVisualization()" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Toutes les scènes</option>
+                    </select>
+                </div>
+                
+                <!-- Visualization area -->
+                <div id="visualizationText" class="p-4 bg-white border-2 border-gray-200 rounded-lg" style="max-height: 70vh; overflow-y: auto; line-height: 1.8; font-size: 15px;">
+                    <p class="text-gray-400 italic">Le texte avec les couleurs d'attribution apparaîtra ici...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rehearse Tab -->
+        <div id="content-rehearse" class="hidden space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Contrôles de Lecture</h2>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Acteur en répétition:</label>
+                    <select id="rehearsingActor" onchange="updateRehearse()" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Sélectionner un acteur</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Filtrer par scène:</label>
+                    <select id="sceneFilter" onchange="updateRehearse()" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Toutes les scènes</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Débit de lecture (voix IA): <span id="rateValue">1.0</span>x</label>
+                    <input type="range" id="speechRate" min="0.5" max="2.0" step="0.1" value="1.0" 
+                           class="w-full" oninput="updateRate(this.value)">
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>0.5x (lent)</span>
+                        <span>2.0x (rapide)</span>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-1">💡 Vitesse de la voix IA pour les autres acteurs</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Vitesse de lecture silencieuse: <span id="readingSpeedValue">200</span> mots/minute</label>
+                    <input type="range" id="readingSpeed" min="100" max="400" step="25" value="200" 
+                           class="w-full" oninput="updateReadingSpeed(this.value)">
+                    <div class="flex justify-between text-xs text-gray-500">
+                        <span>100 (lent)</span>
+                        <span>400 (rapide)</span>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-1">💡 Le temps de pause pour vos répliques sera calculé selon le nombre de mots × votre vitesse de lecture</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Voix:</label>
+                    <select id="voiceSelect" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Voix par défaut</option>
+                    </select>
+                </div>
+
+                <div class="flex gap-2 mb-3">
+                    <button onclick="playSelected()" class="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        ▶ Lire les répliques sélectionnées
+                    </button>
+                    <button onclick="stopSpeech()" class="px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                        ⏹ Stop
+                    </button>
+                </div>
+
+                <div id="rehearseStatus" class="hidden p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                    <p class="text-sm font-semibold text-yellow-800">⏸ Pause - Lisez votre réplique silencieusement...</p>
+                    <div id="currentMyLine" class="text-sm text-gray-700 mt-2 italic"></div>
+                    <div class="mt-2 w-full bg-yellow-200 rounded-full h-2">
+                        <div id="pauseProgress" class="bg-yellow-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Textes à répéter</h2>
+                    <div class="flex gap-2">
+                        <button onclick="selectAllOthers()" class="text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                            Tout sélectionner
+                        </button>
+                        <button onclick="deselectAll()" class="text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                            Tout désélectionner
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Rehearsal Progress View - Sticky at top -->
+                <div id="rehearseProgressView" class="hidden mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border-2 border-blue-300 sticky top-0 z-10 shadow-lg">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-bold text-lg">📖 Répétition en cours</h3>
+                        <div class="text-sm bg-white px-3 py-1 rounded-full">
+                            <span id="progressCounter" class="font-semibold">0/0</span>
+                        </div>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 mb-4">
+                        <div id="overallProgress" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    
+                    <!-- Previous line preview -->
+                    <div id="previousLinePreview" class="mb-3 p-3 bg-gray-100 rounded border border-gray-300 opacity-75">
+                        <p class="text-xs text-gray-500 mb-1">⬆️ Réplique précédente :</p>
+                        <div class="flex items-center gap-2">
+                            <span id="previousLineSpeaker" class="font-semibold text-sm text-gray-700"></span>
+                            <span id="previousLineText" class="text-sm text-gray-600 truncate"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Current line display -->
+                    <div id="currentLineDisplay" class="bg-white rounded-lg p-4 shadow-md border-l-4 border-blue-500">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span id="currentLineIcon" class="text-2xl">🔊</span>
+                            <span id="currentLineSpeaker" class="font-bold text-lg"></span>
+                            <span id="currentLineInfo" class="text-sm text-gray-600"></span>
+                        </div>
+                        <p id="currentLineText" class="text-gray-800 text-base leading-relaxed"></p>
+                    </div>
+                    
+                    <!-- Next line preview -->
+                    <div id="nextLinePreview" class="mt-3 p-3 bg-gray-50 rounded border border-gray-200">
+                        <p class="text-xs text-gray-500 mb-1">⬇️ À suivre :</p>
+                        <div class="flex items-center gap-2">
+                            <span id="nextLineSpeaker" class="font-semibold text-sm text-gray-700"></span>
+                            <span id="nextLineText" class="text-sm text-gray-600 truncate"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="rehearseList" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- Stats Tab -->
+        <div id="content-stats" class="hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Statistiques par Acteur</h2>
+                <div id="statsList" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // FIREBASE CONFIGURATION
+        // ============================================
+        
+        // 🔥 REMPLACEZ CES VALEURS PAR VOTRE CONFIGURATION FIREBASE
+        // (Instructions ci-dessous pour obtenir ces valeurs)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCOq1AoaajErYEs5vk_OBXf1eE9JN46irQ",
+            authDomain: "theatre-app-2401b.firebaseapp.com",
+            projectId: "theatre-app-2401b",
+            storageBucket: "theatre-app-2401b.firebasestorage.app",
+            messagingSenderId: "1097257935776",
+            appId: "1:1097257935776:web:7ff3f85f48f752c1b43ac5"
+        };
+        
+        // Initialize Firebase
+        let db = null;
+        let isFirebaseEnabled = false;
+        
+        try {
+            // Check if config is filled
+            if (firebaseConfig.apiKey !== "VOTRE_API_KEY") {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                isFirebaseEnabled = true;
+                console.log('✅ Firebase connecté avec succès!');
+                
+                // Show connection status
+                setTimeout(() => {
+                    showNotification('✅ Synchronisation activée', 'success');
+                }, 1000);
+            } else {
+                console.log('ℹ️ Firebase non configuré. Fonctionnement en mode local uniquement.');
+                showNotification('ℹ️ Mode local (pas de synchronisation)', 'info');
+            }
+        } catch (error) {
+            console.error('❌ Erreur Firebase:', error);
+            showNotification('⚠️ Erreur de connexion Firebase', 'error');
+        }
+        
+        // Project ID (changez "theatre-app" par votre nom de projet)
+        const PROJECT_ID = "LADJ";
+        
+        // ============================================
+        // APPLICATION VARIABLES
+        // ============================================
+        
+        let actors = [];
+        let characters = [];
+        let currentSpeech = null;
+        let availableVoices = [];
+        let fullTextContent = '';
+        let selectedText = '';
+        let assignments = [];
+        let detectedCharacters = [];
+        let contextMenuVisible = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        let pauseTimeout = null;
+        let pauseProgressInterval = null;
+        let isSpeaking = false;
+        let currentRehearsalIndex = 0;
+        let totalRehearsalLines = 0;
+        let rehearsalLines = [];
+        let sceneNotes = {}; // Store stage directions/notes for each scene
+        
+        // ============================================
+        // FIREBASE FUNCTIONS
+        // ============================================
+        
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-100 border-green-500 text-green-800',
+                error: 'bg-red-100 border-red-500 text-red-800',
+                info: 'bg-blue-100 border-blue-500 text-blue-800'
+            };
+            
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg border-l-4 shadow-lg z-50 ${colors[type]} transition-opacity duration-500`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
+        
+        async function saveToFirebase() {
+            if (!isFirebaseEnabled) return;
+            
+            try {
+                const data = {
+                    actors: actors,
+                    characters: characters,
+                    fullTextContent: fullTextContent,
+                    sceneNotes: sceneNotes,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('projects').doc(PROJECT_ID).set(data);
+                console.log('💾 Données sauvegardées dans Firebase');
+            } catch (error) {
+                console.error('❌ Erreur sauvegarde Firebase:', error);
+                showNotification('⚠️ Erreur de sauvegarde', 'error');
+            }
+        }
+        
+        async function loadFromFirebase() {
+            if (!isFirebaseEnabled) {
+                // Load from localStorage as fallback
+                loadFromLocalStorage();
+                return;
+            }
+            
+            try {
+                const doc = await db.collection('projects').doc(PROJECT_ID).get();
+                
+                if (doc.exists) {
+                    const data = doc.data();
+                    actors = data.actors || [];
+                    characters = data.characters || [];
+                    fullTextContent = data.fullTextContent || '';
+                    sceneNotes = data.sceneNotes || {};
+                    
+                    // Update UI
+                    updateActorsList();
+                    updateCharactersList();
+                    updateAssignmentsList();
+                    updateVisualization();
+                    updateStats();
+                    
+                    if (fullTextContent) {
+                        document.getElementById('fullText').value = fullTextContent;
+                        document.getElementById('textDisplay').textContent = fullTextContent;
+                    }
+                    
+                    console.log('📥 Données chargées depuis Firebase');
+                    showNotification('✅ Données chargées', 'success');
+                } else {
+                    console.log('ℹ️ Pas de données sauvegardées');
+                }
+            } catch (error) {
+                console.error('❌ Erreur chargement Firebase:', error);
+                showNotification('⚠️ Erreur de chargement', 'error');
+                loadFromLocalStorage();
+            }
+        }
+        
+        function setupFirebaseRealtimeSync() {
+            if (!isFirebaseEnabled) return;
+            
+            // Listen to real-time updates
+            db.collection('projects').doc(PROJECT_ID).onSnapshot((doc) => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    
+                    // Only update if data changed (avoid loops)
+                    if (JSON.stringify(data.actors) !== JSON.stringify(actors)) {
+                        actors = data.actors || [];
+                        updateActorsList();
+                    }
+                    
+                    if (JSON.stringify(data.characters) !== JSON.stringify(characters)) {
+                        characters = data.characters || [];
+                        updateCharactersList();
+                        updateAssignmentsList();
+                        updateVisualization();
+                        updateStats();
+                    }
+                    
+                    if (data.fullTextContent !== fullTextContent) {
+                        fullTextContent = data.fullTextContent || '';
+                        document.getElementById('fullText').value = fullTextContent;
+                        document.getElementById('textDisplay').textContent = fullTextContent;
+                    }
+                    
+                    if (JSON.stringify(data.sceneNotes) !== JSON.stringify(sceneNotes)) {
+                        sceneNotes = data.sceneNotes || {};
+                        updateVisualization();
+                    }
+                    
+                    console.log('🔄 Données synchronisées');
+                }
+            }, (error) => {
+                console.error('❌ Erreur sync temps réel:', error);
+            });
+        }
+        
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem('theatre_actors', JSON.stringify(actors));
+                localStorage.setItem('theatre_characters', JSON.stringify(characters));
+                localStorage.setItem('theatre_fullText', fullTextContent);
+                localStorage.setItem('theatre_sceneNotes', JSON.stringify(sceneNotes));
+                console.log('💾 Sauvegarde locale effectuée');
+            } catch (error) {
+                console.error('❌ Erreur sauvegarde locale:', error);
+            }
+        }
+        
+        function loadFromLocalStorage() {
+            try {
+                const savedActors = localStorage.getItem('theatre_actors');
+                const savedCharacters = localStorage.getItem('theatre_characters');
+                const savedFullText = localStorage.getItem('theatre_fullText');
+                const savedSceneNotes = localStorage.getItem('theatre_sceneNotes');
+                
+                if (savedActors) actors = JSON.parse(savedActors);
+                if (savedCharacters) characters = JSON.parse(savedCharacters);
+                if (savedFullText) {
+                    fullTextContent = savedFullText;
+                    document.getElementById('fullText').value = fullTextContent;
+                    document.getElementById('textDisplay').textContent = fullTextContent;
+                }
+                if (savedSceneNotes) sceneNotes = JSON.parse(savedSceneNotes);
+                
+                updateActorsList();
+                updateCharactersList();
+                updateAssignmentsList();
+                updateVisualization();
+                updateStats();
+                
+                console.log('📥 Données locales chargées');
+            } catch (error) {
+                console.error('❌ Erreur chargement local:', error);
+            }
+        }
+        
+        // ============================================
+        // APPLICATION FUNCTIONS
+        // ============================================
+
+        
+        // Color palette for actors - 14 highly distinct colors
+        const actorColors = [
+            '#ef4444', // red
+            '#3b82f6', // blue
+            '#10b981', // emerald green
+            '#f59e0b', // amber
+            '#8b5cf6', // violet
+            '#ec4899', // pink
+            '#14b8a6', // teal
+            '#f97316', // orange
+            '#84cc16', // lime
+            '#a855f7', // purple
+            '#06b6d4', // cyan
+            '#fb923c', // orange-light
+            '#facc15', // yellow
+            '#f43f5e', // rose
+        ];
+        
+        function getActorColor(actor) {
+            const actorIndex = actors.indexOf(actor);
+            if (actorIndex === -1) return '#6b7280'; // gray for unassigned
+            return actorColors[actorIndex % actorColors.length];
+        }
+        
+        function updateVisualization() {
+            const visualText = document.getElementById('visualizationText');
+            const legend = document.getElementById('colorLegend');
+            const sceneFilter = document.getElementById('visualSceneFilter').value;
+            
+            if (characters.length === 0) {
+                visualText.innerHTML = '<p class="text-gray-400 italic">Aucune attribution n\'a été créée. Veuillez d\'abord attribuer des textes aux acteurs.</p>';
+                return;
+            }
+            
+            // Populate scene filter
+            const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
+            const sceneFilterSelect = document.getElementById('visualSceneFilter');
+            const currentSceneValue = sceneFilterSelect.value;
+            sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
+            scenes.forEach(scene => {
+                const option = document.createElement('option');
+                option.value = scene;
+                option.textContent = scene;
+                sceneFilterSelect.appendChild(option);
+            });
+            if (currentSceneValue && scenes.includes(currentSceneValue)) {
+                sceneFilterSelect.value = currentSceneValue;
+            }
+            
+            // Build legend
+            legend.innerHTML = actors.map(actor => {
+                const color = getActorColor(actor);
+                return `
+                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
+                        <div class="w-6 h-6 rounded" style="background-color: ${color};"></div>
+                        <span class="font-semibold text-sm">${actor}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            // Filter characters by scene if needed
+            let filteredChars = characters;
+            if (sceneFilter) {
+                filteredChars = characters.filter(c => c.scene === sceneFilter);
+            }
+            
+            // Build a map of all cleaned texts with their actors
+            const allTexts = filteredChars.map((char, idx) => ({
+                original: char,
+                cleaned: removeCharacterNameFromText(char.text, char.name).trim(),
+                index: idx
+            }));
+            
+            // Build visualization with overlap detection
+            let html = '';
+            let currentScene = '';
+            let processedIndices = new Set();
+            
+            allTexts.forEach((item, mainIdx) => {
+                if (processedIndices.has(mainIdx)) return;
+                
+                const char = item.original;
+                const cleanedText = item.cleaned;
+                
+                // Find all speakers who say this EXACT text or texts that CONTAIN this text
+                const relatedSpeakers = [];
+                
+                allTexts.forEach((otherItem, otherIdx) => {
+                    const otherCleaned = otherItem.cleaned;
+                    
+                    // Check for exact match OR if one contains the other
+                    if (cleanedText === otherCleaned || 
+                        (cleanedText.length > 3 && otherCleaned.includes(cleanedText)) ||
+                        (otherCleaned.length > 3 && cleanedText.includes(otherCleaned))) {
+                        
+                        relatedSpeakers.push({
+                            actor: otherItem.original.actor,
+                            character: otherItem.original.character,
+                            text: otherCleaned,
+                            index: otherIdx
+                        });
+                        processedIndices.add(otherIdx);
+                    }
+                });
+                
+                const uniqueActors = [...new Set(relatedSpeakers.map(s => s.actor))];
+                const isChorus = uniqueActors.length > 1;
+                
+                // Show scene headers with editable notes
+                const charScene = char.scene || 'SCÈNE 1';
+                if (charScene !== currentScene) {
+                    const sceneNote = sceneNotes[charScene] || '';
+                    html += `
+                        <div class="mb-4 mt-6">
+                            <div class="text-2xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2">${charScene}</div>
+                            <div class="mt-2 p-3 bg-amber-50 rounded-lg border-l-4 border-amber-500">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="text-sm font-bold text-amber-900">🎬 Notes de mise en scène:</span>
+                                </div>
+                                <textarea 
+                                    id="scene-note-${charScene.replace(/\s+/g, '-')}" 
+                                    onchange="saveSceneNote('${charScene}', this.value)"
+                                    placeholder="Ajoutez des notes de mise en scène pour cette scène (décor, ambiance, déplacements, intentions...)"
+                                    class="w-full p-2 border rounded text-sm resize-y"
+                                    rows="3"
+                                    style="caret-color: #ef4444;"
+                                >${sceneNote}</textarea>
+                            </div>
+                        </div>
+                    `;
+                    currentScene = charScene;
+                }
+                
+                let style = '';
+                let characterLabel = '';
+                
+                if (isChorus) {
+                    // Multi-color gradient for chorus
+                    const gradientColors = uniqueActors.map(a => getActorColor(a)).join(', ');
+                    style = `background: linear-gradient(135deg, ${gradientColors}); color: white; font-weight: 600; padding: 8px 12px; border-radius: 6px; margin: 6px 0; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.2);`;
+                    
+                    // Show all character names involved
+                    const characterNames = [...new Set(relatedSpeakers.map(s => s.character))];
+                    characterLabel = characterNames.join(' + ');
+                } else {
+                    // Single color for single actor
+                    const color = getActorColor(uniqueActors[0]);
+                    style = `background-color: ${color}22; border-left: 4px solid ${color}; padding: 8px 12px; margin: 6px 0; border-radius: 4px; display: block;`;
+                    characterLabel = char.name;
+                }
+                
+                const actorLabel = isChorus 
+                    ? `🎭 ${uniqueActors.join(' + ')}` 
+                    : uniqueActors[0];
+                
+                // Use the longest version of the text for display
+                const displayText = relatedSpeakers.reduce((longest, curr) => 
+                    curr.text.length > longest.length ? curr.text : longest, cleanedText);
+                
+                html += `
+                    <div style="${style}">
+                        <div style="font-weight: bold; margin-bottom: 4px; ${isChorus ? 'color: white;' : `color: ${getActorColor(uniqueActors[0])};`}">
+                            ${characterLabel} (${actorLabel})
+                        </div>
+                        <div style="${isChorus ? 'color: white;' : 'color: #1f2937;'}">${displayText}</div>
+                    </div>
+                `;
+            });
+            
+            visualText.innerHTML = html || '<p class="text-gray-400 italic">Aucune réplique à afficher pour cette scène.</p>';
+        }
+
+        function saveSceneNote(sceneName, noteText) {
+            sceneNotes[sceneName] = noteText;
+            console.log(`Note saved for ${sceneName}:`, noteText);
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+        
+        async function exportToPDF() {
+            // Show loading message
+            const originalButton = event.target;
+            const originalText = originalButton.textContent;
+            originalButton.textContent = '⏳ Génération PDF...';
+            originalButton.disabled = true;
+            
+            try {
+                // Access jsPDF from the global window object
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'mm',
+                    format: 'a4'
+                });
+                
+                // Set up fonts and colors
+                doc.setFont('helvetica');
+                
+                // Title
+                doc.setFontSize(20);
+                doc.setTextColor(0, 0, 0);
+                doc.text('Visualisation - Assistant de Répétition', 105, 20, { align: 'center' });
+                
+                // Get current date
+                const date = new Date().toLocaleDateString('fr-FR');
+                doc.setFontSize(10);
+                doc.setTextColor(100, 100, 100);
+                doc.text(date, 105, 27, { align: 'center' });
+                
+                let yPosition = 40;
+                const pageHeight = 297; // A4 height in mm
+                const marginBottom = 20;
+                const lineHeight = 5;
+                const maxWidth = 180;
+                
+                // Add legend
+                doc.setFontSize(12);
+                doc.setTextColor(0, 0, 0);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Légende des couleurs:', 15, yPosition);
+                yPosition += 7;
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                
+                actors.forEach((actor, index) => {
+                    const color = getActorColor(actor);
+                    const rgb = hexToRgb(color);
+                    
+                    // Draw color square
+                    doc.setFillColor(rgb.r, rgb.g, rgb.b);
+                    doc.rect(15, yPosition - 3, 4, 4, 'F');
+                    
+                    // Draw actor name
+                    doc.setTextColor(0, 0, 0);
+                    doc.text(actor, 22, yPosition);
+                    
+                    yPosition += 6;
+                    
+                    if (yPosition > pageHeight - marginBottom) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                });
+                
+                yPosition += 5;
+                
+                // Get the visualization content with chorus detection
+                const sceneFilter = document.getElementById('visualSceneFilter').value;
+                let filteredChars = characters;
+                if (sceneFilter) {
+                    filteredChars = characters.filter(c => c.scene === sceneFilter);
+                }
+                
+                // Build a map of all cleaned texts with their actors (for chorus detection)
+                const allTexts = filteredChars.map((char, idx) => ({
+                    original: char,
+                    cleaned: removeCharacterNameFromText(char.text, char.name).trim(),
+                    index: idx
+                }));
+                
+                // Process with chorus detection (same logic as visualization)
+                const processedIndices = new Set();
+                const consolidatedItems = [];
+                
+                allTexts.forEach((item, mainIdx) => {
+                    if (processedIndices.has(mainIdx)) return;
+                    
+                    const char = item.original;
+                    const cleanedText = item.cleaned;
+                    
+                    // Find all speakers who say this EXACT text or texts that CONTAIN this text
+                    const relatedSpeakers = [];
+                    
+                    allTexts.forEach((otherItem, otherIdx) => {
+                        const otherCleaned = otherItem.cleaned;
+                        
+                        // Check for exact match OR if one contains the other
+                        if (cleanedText === otherCleaned || 
+                            (cleanedText.length > 3 && otherCleaned.includes(cleanedText)) ||
+                            (otherCleaned.length > 3 && cleanedText.includes(otherCleaned))) {
+                            
+                            relatedSpeakers.push({
+                                actor: otherItem.original.actor,
+                                character: otherItem.original.name,
+                                text: otherCleaned,
+                                index: otherIdx
+                            });
+                            processedIndices.add(otherIdx);
+                        }
+                    });
+                    
+                    const uniqueActors = [...new Set(relatedSpeakers.map(s => s.actor))];
+                    const uniqueCharacters = [...new Set(relatedSpeakers.map(s => s.character))];
+                    const isChorus = uniqueActors.length > 1;
+                    
+                    consolidatedItems.push({
+                        scene: char.scene || 'SCÈNE 1',
+                        text: cleanedText,
+                        isChorus: isChorus,
+                        actors: uniqueActors,
+                        characters: uniqueCharacters,
+                        mainCharacter: char.name,
+                        mainActor: char.actor
+                    });
+                });
+                
+                // Group by scene
+                const sceneGroups = {};
+                consolidatedItems.forEach(item => {
+                    if (!sceneGroups[item.scene]) {
+                        sceneGroups[item.scene] = [];
+                    }
+                    sceneGroups[item.scene].push(item);
+                });
+                
+                // Process each scene
+                for (const [sceneName, sceneItems] of Object.entries(sceneGroups)) {
+                    // Check if we need a new page
+                    if (yPosition > pageHeight - marginBottom - 20) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                    
+                    // Scene header
+                    doc.setFontSize(14);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(70, 70, 70);
+                    doc.text(sceneName, 15, yPosition);
+                    yPosition += 8;
+                    
+                    // Scene notes if any
+                    if (sceneNotes[sceneName] && sceneNotes[sceneName].trim()) {
+                        doc.setFontSize(9);
+                        doc.setFont('helvetica', 'italic');
+                        doc.setTextColor(180, 120, 0);
+                        const noteLines = doc.splitTextToSize(`🎬 ${sceneNotes[sceneName]}`, maxWidth);
+                        noteLines.forEach(line => {
+                            if (yPosition > pageHeight - marginBottom) {
+                                doc.addPage();
+                                yPosition = 20;
+                            }
+                            doc.text(line, 15, yPosition);
+                            yPosition += 4;
+                        });
+                        yPosition += 3;
+                    }
+                    
+                    // Process items in this scene
+                    sceneItems.forEach(item => {
+                        // Check if we need a new page
+                        if (yPosition > pageHeight - marginBottom - 15) {
+                            doc.addPage();
+                            yPosition = 20;
+                        }
+                        
+                        if (item.isChorus) {
+                            // CHORUS - Show all actors with gradient/multi-color indicator
+                            doc.setFontSize(10);
+                            doc.setFont('helvetica', 'bold');
+                            
+                            // Use purple color for chorus
+                            doc.setTextColor(128, 0, 128);
+                            
+                            // Show all characters and actors
+                            const chorusLabel = `🎭 CHŒUR: ${item.characters.join(' + ')} (${item.actors.join(', ')}):`;
+                            doc.text(chorusLabel, 15, yPosition);
+                            yPosition += 5;
+                        } else {
+                            // Regular single speaker
+                            const color = getActorColor(item.mainActor);
+                            const rgb = hexToRgb(color);
+                            
+                            doc.setFontSize(10);
+                            doc.setFont('helvetica', 'bold');
+                            doc.setTextColor(rgb.r, rgb.g, rgb.b);
+                            doc.text(`${item.mainCharacter} (${item.mainActor}):`, 15, yPosition);
+                            yPosition += 5;
+                        }
+                        
+                        // Text content
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(9);
+                        doc.setTextColor(50, 50, 50);
+                        
+                        const textLines = doc.splitTextToSize(item.text, maxWidth);
+                        textLines.forEach(line => {
+                            if (yPosition > pageHeight - marginBottom) {
+                                doc.addPage();
+                                yPosition = 20;
+                            }
+                            doc.text(line, 15, yPosition);
+                            yPosition += 4;
+                        });
+                        
+                        yPosition += 4; // Space after each item
+                    });
+                    
+                    yPosition += 3; // Extra space after each scene
+                }
+                
+                // Save the PDF
+                const fileName = sceneFilter 
+                    ? `visualisation_${sceneFilter.replace(/\s+/g, '_')}_${date.replace(/\//g, '-')}.pdf`
+                    : `visualisation_complete_${date.replace(/\//g, '-')}.pdf`;
+                    
+                doc.save(fileName);
+                
+                // Reset button
+                originalButton.textContent = originalText;
+                originalButton.disabled = false;
+                
+            } catch (error) {
+                console.error('Erreur lors de la génération du PDF:', error);
+                alert('Erreur lors de la génération du PDF. Vérifiez la console pour plus de détails.');
+                originalButton.textContent = originalText;
+                originalButton.disabled = false;
+            }
+        }
+        
+        function hexToRgb(hex) {
+            // Convert hex color to RGB
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 0, g: 0, b: 0 };
+        }
+
+        function updateReadingSpeed(value) {
+            document.getElementById('readingSpeedValue').textContent = value;
+        }
+
+        function calculatePauseDuration(text) {
+            // Count words in the text
+            const wordCount = countWords(text);
+            
+            // Get reading speed (words per minute)
+            const readingSpeed = parseFloat(document.getElementById('readingSpeed').value);
+            
+            // Calculate duration in milliseconds
+            // Formula: (words / words_per_minute) * 60000 ms
+            const durationMs = (wordCount / readingSpeed) * 60000;
+            
+            // Add a small buffer (500ms) for comprehension
+            return Math.max(1000, durationMs + 500);
+        }
+
+        // Load voices
+        function loadVoices() {
+            availableVoices = speechSynthesis.getVoices();
+            const voiceSelect = document.getElementById('voiceSelect');
+            voiceSelect.innerHTML = '<option value="">Voix par défaut</option>';
+            
+            // Prioritize French voices
+            const frenchVoices = availableVoices.filter(v => v.lang.startsWith('fr'));
+            const otherVoices = availableVoices.filter(v => !v.lang.startsWith('fr'));
+            
+            frenchVoices.forEach((voice, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+            
+            if (frenchVoices.length > 0 && otherVoices.length > 0) {
+                const separator = document.createElement('option');
+                separator.disabled = true;
+                separator.textContent = '--- Autres langues ---';
+                voiceSelect.appendChild(separator);
+            }
+            
+            otherVoices.forEach((voice, index) => {
+                const option = document.createElement('option');
+                option.value = frenchVoices.length + index;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+        }
+
+        // Initialize voices
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
+        loadVoices();
+
+        function loadFullText() {
+            fullTextContent = document.getElementById('fullText').value;
+            if (!fullTextContent.trim()) {
+                alert('Veuillez entrer du texte');
+                return;
+            }
+            
+            document.getElementById('textDisplay').textContent = fullTextContent;
+            document.getElementById('selectionPanel').classList.remove('hidden');
+            updateSelectionActorDropdown();
+            
+            // Add selection and right-click listeners
+            const textDisplay = document.getElementById('textDisplay');
+            textDisplay.addEventListener('mouseup', handleTextSelection);
+            textDisplay.addEventListener('contextmenu', handleRightClick);
+            
+            // Close context menu on click outside
+            document.addEventListener('click', closeContextMenu);
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function handleRightClick(e) {
+            e.preventDefault();
+            
+            const selection = window.getSelection();
+            selectedText = selection.toString().trim();
+            
+            if (!selectedText) {
+                closeContextMenu();
+                return;
+            }
+            
+            if (actors.length === 0) {
+                alert('Veuillez d\'abord ajouter des acteurs dans l\'onglet Configuration');
+                return;
+            }
+            
+            // Detect character from selected text OR from surrounding context
+            const detectedCharacter = detectCharacterFromContext(selection);
+            
+            // Store mouse position
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            
+            // Show context menu
+            showContextMenu(detectedCharacter);
+        }
+
+        function detectCharacterFromContext(selection) {
+            // First try to detect from the selected text itself
+            const fromSelection = detectCharacterFromSelection(selectedText);
+            if (fromSelection) {
+                return fromSelection;
+            }
+            
+            // If not found, look at the surrounding context
+            // Get the full text of the paragraph/div containing the selection
+            const range = selection.getRangeAt(0);
+            const container = range.commonAncestorContainer;
+            
+            // Find the closest element containing text (could be the text node's parent)
+            let textElement = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+            
+            // Try to find a parent that has the full line of text
+            while (textElement && textElement.id !== 'textDisplay') {
+                const fullText = textElement.textContent || textElement.innerText;
+                
+                // Try to find character name in the full text
+                const characterMatch = detectCharacterFromSelection(fullText);
+                if (characterMatch) {
+                    return characterMatch;
+                }
+                
+                textElement = textElement.parentElement;
+            }
+            
+            // Last resort: search in the entire visible text before the selection
+            const displayElement = document.getElementById('textDisplay');
+            if (displayElement) {
+                const fullDisplayText = displayElement.textContent;
+                const selectionStart = fullDisplayText.indexOf(selectedText);
+                
+                if (selectionStart !== -1) {
+                    // Get the text before the selection (up to 200 characters before)
+                    const contextStart = Math.max(0, selectionStart - 200);
+                    const contextText = fullDisplayText.substring(contextStart, selectionStart + selectedText.length);
+                    
+                    // Find the last character name before or at the selection
+                    // Split by newlines and look backwards for a character pattern
+                    const lines = contextText.split('\n');
+                    
+                    for (let i = lines.length - 1; i >= 0; i--) {
+                        const line = lines[i];
+                        const characterMatch = detectCharacterFromSelection(line);
+                        if (characterMatch) {
+                            return characterMatch;
+                        }
+                    }
+                }
+            }
+            
+            return '';
+        }
+
+        function detectCharacterFromSelection(text) {
+            // Try to find character name at the beginning of the selection
+            // Supports formats: "PERSONNAGE: texte" or "PERSONNAGE - texte" or "Personnage. texte"
+            
+            // Exclude common scene/part markers
+            const excludedPatterns = [
+                /^(SCÈNE|SCENE|ACTE|PROLOGUE|ÉPILOGUE|EPILOGUE|INTERMÈDE|INTERMEDE|PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|PARTIE)[\s:]*(\d+|[IVX]+|[0-9]+)?/i
+            ];
+            
+            // Check if this is a scene/part marker
+            for (let excluded of excludedPatterns) {
+                if (excluded.test(text.trim())) {
+                    return ''; // Don't treat scene markers as character names
+                }
+            }
+            
+            const patterns = [
+                /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*/,
+                /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][a-zàâäçèéêëîïôùûü]+)\s*[:.-]\s*/
+            ];
+            
+            for (let pattern of patterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    const potentialName = match[1].trim();
+                    
+                    // Double-check it's not a scene marker
+                    for (let excluded of excludedPatterns) {
+                        if (excluded.test(potentialName)) {
+                            return '';
+                        }
+                    }
+                    
+                    return potentialName;
+                }
+            }
+            
+            return '';
+        }
+        
+        function detectSceneFromContext(selection) {
+            // Try to detect the scene name from the context around the selection
+            
+            // Pattern to detect scene markers
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            // 1. Check if selection itself contains a scene marker (first line)
+            const firstLine = selection.split('\n')[0].trim();
+            const sceneMatch = firstLine.match(scenePattern);
+            if (sceneMatch) {
+                return firstLine;
+            }
+            
+            // 2. Search in parent elements
+            let textElement = window.getSelection().anchorNode;
+            if (textElement && textElement.nodeType === Node.TEXT_NODE) {
+                textElement = textElement.parentElement;
+            }
+            
+            // Go up the DOM tree looking for scene markers
+            while (textElement && textElement.id !== 'textDisplay') {
+                const fullText = textElement.textContent || textElement.innerText;
+                const lines = fullText.split('\n');
+                
+                // Look for scene marker in the lines above
+                for (let i = 0; i < Math.min(lines.length, 5); i++) {
+                    const line = lines[i].trim();
+                    const match = line.match(scenePattern);
+                    if (match) {
+                        return line;
+                    }
+                }
+                
+                textElement = textElement.parentElement;
+            }
+            
+            // 3. Last resort: search backwards in the entire visible text
+            const displayElement = document.getElementById('textDisplay');
+            if (displayElement) {
+                const fullDisplayText = displayElement.textContent;
+                const selectionStart = fullDisplayText.indexOf(selection);
+                
+                if (selectionStart !== -1) {
+                    // Get all text before the selection
+                    const textBefore = fullDisplayText.substring(0, selectionStart);
+                    const lines = textBefore.split('\n');
+                    
+                    // Search backwards for the last scene marker
+                    for (let i = lines.length - 1; i >= 0; i--) {
+                        const line = lines[i].trim();
+                        const match = line.match(scenePattern);
+                        if (match) {
+                            console.log(`🎬 Scene detected from context: ${line}`);
+                            return line;
+                        }
+                    }
+                }
+            }
+            
+            // Default to SCÈNE 1 if no scene found
+            console.log('⚠️ No scene found, defaulting to SCÈNE 1');
+            return 'SCÈNE 1';
+        }
+
+        function showContextMenu(detectedCharacter) {
+            const menu = document.getElementById('contextMenu');
+            const actorsList = document.getElementById('contextMenuActors');
+            
+            // Clear previous items
+            actorsList.innerHTML = '';
+            
+            // Add chorus option at the top
+            const chorusItem = document.createElement('div');
+            chorusItem.className = 'context-menu-item bg-purple-50';
+            chorusItem.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🎭</span>
+                    <div>
+                        <div class="font-bold text-purple-900">Chœur (plusieurs acteurs)</div>
+                        <div class="text-xs text-purple-600">Sélectionnez plusieurs acteurs</div>
+                    </div>
+                </div>
+            `;
+            chorusItem.onclick = () => assignToChorus(detectedCharacter);
+            actorsList.appendChild(chorusItem);
+            
+            // Add separator
+            const separator = document.createElement('div');
+            separator.className = 'border-t-2 border-purple-200 my-1';
+            actorsList.appendChild(separator);
+            
+            // Add actor items
+            actors.forEach(actor => {
+                const item = document.createElement('div');
+                item.className = 'context-menu-item';
+                item.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span>${actor}</span>
+                        ${detectedCharacter ? `<span class="text-xs text-gray-500 ml-2">${detectedCharacter}</span>` : ''}
+                    </div>
+                `;
+                item.onclick = () => assignToActor(actor, detectedCharacter);
+                actorsList.appendChild(item);
+            });
+            
+            // Position and show menu
+            menu.style.left = mouseX + 'px';
+            menu.style.top = mouseY + 'px';
+            menu.classList.remove('hidden');
+            contextMenuVisible = true;
+        }
+
+        function assignToChorus(detectedCharacter) {
+            if (!selectedText) return;
+            
+            // Use detected character or prompt for one
+            let characterName = detectedCharacter;
+            if (!characterName) {
+                characterName = prompt('Nom du personnage/réplique:');
+                if (!characterName) {
+                    closeContextMenu();
+                    return;
+                }
+            }
+            
+            // Create a multi-select dialog for actors
+            const actorCheckboxes = actors.map(actor => 
+                `<label class="flex items-center gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer">
+                    <input type="checkbox" value="${actor}" class="chorus-actor-checkbox w-4 h-4">
+                    <span>${actor}</span>
+                </label>`
+            ).join('');
+            
+            const dialogHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;" id="chorusDialog">
+                    <div style="background: white; padding: 24px; border-radius: 12px; max-width: 400px; width: 90%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+                        <h3 style="font-size: 18px; font-weight: bold; margin-bottom: 16px; color: #7c3aed;">
+                            🎭 Sélectionnez les acteurs pour le chœur
+                        </h3>
+                        <div style="margin-bottom: 16px; max-height: 300px; overflow-y: auto;">
+                            ${actorCheckboxes}
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="confirmChorusSelection('${characterName}')" style="flex: 1; padding: 8px 16px; background: #7c3aed; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                                Valider
+                            </button>
+                            <button onclick="closeChorusDialog()" style="flex: 1; padding: 8px 16px; background: #e5e7eb; color: #374151; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', dialogHTML);
+            closeContextMenu();
+        }
+
+        function confirmChorusSelection(characterName) {
+            const checkboxes = document.querySelectorAll('.chorus-actor-checkbox:checked');
+            const selectedActors = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedActors.length === 0) {
+                alert('Veuillez sélectionner au moins un acteur');
+                return;
+            }
+            
+            // Detect scene from context
+            const detectedScene = detectSceneFromContext(selectedText);
+            console.log(`✅ Assigning chorus to scene: ${detectedScene}`);
+            
+            // Add the same text for each selected actor
+            selectedActors.forEach(actor => {
+                characters.push({ 
+                    name: characterName, 
+                    actor: actor, 
+                    text: selectedText,
+                    scene: detectedScene
+                });
+                
+                assignments.push({ 
+                    character: characterName, 
+                    actor: actor, 
+                    text: selectedText,
+                    scene: detectedScene
+                });
+            });
+            
+            // Update displays
+            updateAssignmentsList();
+            updateCharactersList();
+            
+            // Clear selection and reset preview
+            window.getSelection().removeAllRanges();
+            selectedText = '';
+            document.getElementById('previewContent').classList.add('hidden');
+            document.getElementById('previewPlaceholder').classList.remove('hidden');
+            
+            closeChorusDialog();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function closeChorusDialog() {
+            const dialog = document.getElementById('chorusDialog');
+            if (dialog) {
+                dialog.remove();
+            }
+        }
+
+        function assignToActor(actor, detectedCharacter) {
+            if (!selectedText) return;
+            
+            // Use detected character or prompt for one
+            let characterName = detectedCharacter;
+            if (!characterName) {
+                characterName = prompt('Nom du personnage:');
+                if (!characterName) {
+                    closeContextMenu();
+                    return;
+                }
+            }
+            
+            // Detect scene from context
+            const detectedScene = detectSceneFromContext(selectedText);
+            console.log(`✅ Assigning to scene: ${detectedScene}`);
+            
+            // Add to characters array
+            characters.push({ 
+                name: characterName, 
+                actor: actor, 
+                text: selectedText,
+                scene: detectedScene
+            });
+            
+            // Add to assignments for visual tracking
+            assignments.push({ 
+                character: characterName, 
+                actor: actor, 
+                text: selectedText,
+                scene: detectedScene
+            });
+            
+            // Update displays
+            updateAssignmentsList();
+            updateCharactersList();
+            
+            // Clear selection and reset preview
+            window.getSelection().removeAllRanges();
+            selectedText = '';
+            document.getElementById('previewContent').classList.add('hidden');
+            document.getElementById('previewPlaceholder').classList.remove('hidden');
+            
+            closeContextMenu();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function closeContextMenu() {
+            if (contextMenuVisible) {
+                document.getElementById('contextMenu').classList.add('hidden');
+                contextMenuVisible = false;
+            }
+        }
+
+        function autoDetectCharacters() {
+            fullTextContent = document.getElementById('fullText').value;
+            if (!fullTextContent.trim()) {
+                alert('Veuillez entrer du texte');
+                return;
+            }
+
+            if (actors.length === 0) {
+                alert('Veuillez d\'abord ajouter des acteurs dans l\'onglet Configuration');
+                return;
+            }
+
+            // Parse the text to find character lines and scenes
+            const lines = fullTextContent.split('\n');
+            detectedCharacters = [];
+            
+            let currentCharacter = null;
+            let currentText = '';
+            let currentScene = 'SCÈNE 1'; // Default scene
+            
+            // Pattern to detect character names (all caps or capitalized followed by : or -)
+            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
+            
+            // Pattern to detect scenes - more comprehensive
+            // Match entire line that starts with scene markers
+            // Also handles formats like "PREMIÈRE PARTIE - SCÈNE 1"
+            const scenePattern = /^\s*(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            for (let line of lines) {
+                const trimmedLine = line.trim();
+                
+                // Skip empty lines
+                if (!trimmedLine) {
+                    continue;
+                }
+                
+                // Check if this is a scene marker - MUST be entire line
+                const sceneMatch = trimmedLine.match(scenePattern);
+                if (sceneMatch) {
+                    // Save previous character before changing scene
+                    if (currentCharacter && currentText.trim()) {
+                        addOrUpdateDetectedCharacter(currentCharacter, currentText.trim(), currentScene);
+                        currentCharacter = null;
+                        currentText = '';
+                    }
+                    
+                    currentScene = trimmedLine;
+                    console.log('✅ Scene detected:', currentScene);
+                    continue;
+                }
+                
+                // Try to match character pattern
+                const match = trimmedLine.match(characterPattern);
+                
+                if (match) {
+                    const potentialName = match[1].trim();
+                    
+                    // Double-check this isn't a scene marker that somehow got through
+                    const isSceneMarker = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|SCÈNE|SCENE|ACTE|PROLOGUE|ÉPILOGUE|EPILOGUE|PARTIE)/i.test(potentialName);
+                    
+                    if (!isSceneMarker) {
+                        // Save previous character's text
+                        if (currentCharacter && currentText.trim()) {
+                            addOrUpdateDetectedCharacter(currentCharacter, currentText.trim(), currentScene);
+                        }
+                        
+                        // Start new character
+                        currentCharacter = potentialName;
+                        currentText = match[2];
+                        console.log(`Character "${currentCharacter}" in scene "${currentScene}"`);
+                    }
+                } else if (currentCharacter && trimmedLine) {
+                    // Continue current character's text
+                    currentText += '\n' + trimmedLine;
+                }
+            }
+            
+            // Save last character
+            if (currentCharacter && currentText.trim()) {
+                addOrUpdateDetectedCharacter(currentCharacter, currentText.trim(), currentScene);
+            }
+            
+            if (detectedCharacters.length === 0) {
+                alert('Aucun personnage détecté. Assurez-vous que le texte suit le format:\nPERSONNAGE: texte');
+                return;
+            }
+            
+            displayDetectedCharacters();
+        }
+
+        function addOrUpdateDetectedCharacter(characterName, text, scene) {
+            const existing = detectedCharacters.find(c => c.name === characterName);
+            if (existing) {
+                existing.lines.push({ text, scene });
+            } else {
+                detectedCharacters.push({
+                    name: characterName,
+                    lines: [{ text, scene }],
+                    actor: ''
+                });
+            }
+        }
+
+        function displayDetectedCharacters() {
+            document.getElementById('detectionPanel').classList.remove('hidden');
+            const list = document.getElementById('detectedCharactersList');
+            
+            list.innerHTML = detectedCharacters.map((char, i) => {
+                // Calculate total words handling both string and object formats
+                const totalWords = char.lines.reduce((sum, lineObj) => {
+                    const text = typeof lineObj === 'string' ? lineObj : lineObj.text;
+                    return sum + countWords(text);
+                }, 0);
+                
+                // Get unique scenes
+                const scenes = [...new Set(char.lines.map(lineObj => {
+                    return typeof lineObj === 'string' ? 'SCÈNE 1' : lineObj.scene;
+                }))];
+                
+                return `
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-300">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1">
+                                <h4 class="font-bold text-lg">${char.name}</h4>
+                                <p class="text-sm text-gray-600">${char.lines.length} réplique(s) • ${totalWords} mots</p>
+                                <p class="text-xs text-green-700 font-semibold mt-1">Scènes: ${scenes.join(', ')}</p>
+                            </div>
+                            <select id="actor-select-${i}" onchange="updateDetectedCharacterActor(${i}, this.value)" 
+                                    class="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Choisir un acteur</option>
+                                ${actors.map(actor => `<option value="${actor}">${actor}</option>`).join('')}
+                            </select>
+                        </div>
+                        <details class="text-sm">
+                            <summary class="cursor-pointer text-blue-600 hover:text-blue-800">Voir les répliques par scène</summary>
+                            <div class="mt-2 space-y-2">
+                                ${char.lines.map((lineObj, j) => {
+                                    const text = typeof lineObj === 'string' ? lineObj : lineObj.text;
+                                    const scene = typeof lineObj === 'string' ? 'SCÈNE 1' : lineObj.scene;
+                                    return `
+                                    <div class="p-2 bg-white rounded border">
+                                        <div class="text-xs font-bold text-green-700 mb-1">${scene}</div>
+                                        <p class="text-gray-700">${text.substring(0, 150)}${text.length > 150 ? '...' : ''}</p>
+                                    </div>
+                                `}).join('')}
+                            </div>
+                        </details>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateDetectedCharacterActor(index, actor) {
+            if (index < detectedCharacters.length) {
+                detectedCharacters[index].actor = actor;
+            }
+        }
+
+        function createAllAssignments() {
+            const unassigned = detectedCharacters.filter(c => !c.actor);
+            if (unassigned.length > 0) {
+                const confirm = window.confirm(
+                    `${unassigned.length} personnage(s) n'ont pas d'acteur assigné:\n${unassigned.map(c => c.name).join(', ')}\n\nVoulez-vous continuer quand même?`
+                );
+                if (!confirm) return;
+            }
+            
+            // Create assignments for all detected characters
+            detectedCharacters.forEach(char => {
+                if (char.actor) {
+                    char.lines.forEach(lineObj => {
+                        const text = typeof lineObj === 'string' ? lineObj : lineObj.text;
+                        const scene = typeof lineObj === 'string' ? 'SCÈNE 1' : (lineObj.scene || 'SCÈNE 1');
+                        
+                        console.log(`Creating assignment: ${char.name} in ${scene}`);
+                        
+                        characters.push({
+                            name: char.name,
+                            actor: char.actor,
+                            text: text,
+                            scene: scene
+                        });
+                        assignments.push({
+                            character: char.name,
+                            actor: char.actor,
+                            text: text,
+                            scene: scene
+                        });
+                    });
+                }
+            });
+            
+            // Update displays
+            updateAssignmentsList();
+            updateCharactersList();
+            
+            // Hide detection panel and show success message
+            document.getElementById('detectionPanel').classList.add('hidden');
+            
+            // Log diagnostic info
+            console.log('=== DIAGNOSTIC APRÈS CRÉATION ===');
+            console.log('Total characters created:', characters.length);
+            console.log('Scenes in characters:', [...new Set(characters.map(c => c.scene))]);
+            console.log('Sample characters:', characters.slice(0, 5));
+            
+            alert(`✓ ${characters.length} répliques ont été créées avec succès!\n\nVous pouvez maintenant aller dans l'onglet Répétition ou Statistiques.`);
+            
+            // Clear detected characters
+            detectedCharacters = [];
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function handleTextSelection() {
+            const selection = window.getSelection();
+            selectedText = selection.toString().trim();
+            
+            const previewContent = document.getElementById('previewContent');
+            const previewPlaceholder = document.getElementById('previewPlaceholder');
+            
+            if (selectedText) {
+                const preview = selectedText.length > 100 ? selectedText.substring(0, 100) + '...' : selectedText;
+                document.getElementById('previewText').textContent = preview;
+                previewContent.classList.remove('hidden');
+                previewPlaceholder.classList.add('hidden');
+            } else {
+                previewContent.classList.add('hidden');
+                previewPlaceholder.classList.remove('hidden');
+            }
+        }
+
+        function assignSelection() {
+            const character = document.getElementById('selectionCharacter').value.trim();
+            const actor = document.getElementById('selectionActor').value;
+            
+            if (!selectedText) {
+                alert('Veuillez sélectionner du texte');
+                return;
+            }
+            
+            if (!character) {
+                alert('Veuillez entrer le nom du personnage');
+                return;
+            }
+            
+            if (!actor) {
+                alert('Veuillez sélectionner un acteur');
+                return;
+            }
+            
+            // Add to characters array
+            characters.push({ name: character, actor: actor, text: selectedText, scene: 'SCÈNE 1' });
+            
+            // Add to assignments for visual tracking
+            assignments.push({ character, actor, text: selectedText, scene: 'SCÈNE 1' });
+            
+            // Clear selection
+            window.getSelection().removeAllRanges();
+            selectedText = '';
+            
+            // Reset preview without layout shift
+            document.getElementById('previewContent').classList.add('hidden');
+            document.getElementById('previewPlaceholder').classList.remove('hidden');
+            document.getElementById('selectionCharacter').value = '';
+            
+            updateAssignmentsList();
+            updateCharactersList();
+        }
+
+        function updateAssignmentsList() {
+            const list = document.getElementById('assignmentsList');
+            list.innerHTML = assignments.map((assign, i) => {
+                const cleanText = removeCharacterNameFromText(assign.text, assign.character);
+                return `
+                <div class="p-3 bg-green-50 rounded-lg border-l-4 border-green-500">
+                    <div class="flex justify-between items-start mb-1">
+                        <div>
+                            <span class="font-bold">${assign.character}</span>
+                            <span class="text-sm text-gray-600 ml-2">(${assign.actor})</span>
+                        </div>
+                        <button onclick="removeAssignment(${i})" class="text-red-500 hover:text-red-700 text-sm">
+                            ✕
+                        </button>
+                    </div>
+                    <p class="text-sm text-gray-700 line-clamp-2">${cleanText.substring(0, 100)}${cleanText.length > 100 ? '...' : ''}</p>
+                    <p class="text-xs text-gray-500 mt-1">${countWords(cleanText)} mots</p>
+                </div>
+            `}).join('');
+        }
+
+        function removeAssignment(index) {
+            assignments.splice(index, 1);
+            characters.splice(index, 1);
+            updateAssignmentsList();
+            updateCharactersList();
+        }
+
+        function updateSelectionActorDropdown() {
+            const select = document.getElementById('selectionActor');
+            select.innerHTML = '<option value="">Sélectionner un acteur</option>';
+            actors.forEach(actor => {
+                const option = document.createElement('option');
+                option.value = actor;
+                option.textContent = actor;
+                select.appendChild(option);
+            });
+        }
+
+        function switchTab(tab) {
+            ['import', 'setup', 'visual', 'rehearse', 'stats'].forEach(t => {
+                const content = document.getElementById(`content-${t}`);
+                const tabBtn = document.getElementById(`tab-${t}`);
+                if (content) content.classList.add('hidden');
+                if (tabBtn) {
+                    tabBtn.classList.remove('border-blue-500', 'text-blue-600');
+                    tabBtn.classList.add('text-gray-600');
+                }
+            });
+            
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('border-blue-500', 'text-blue-600');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-600');
+            
+            if (tab === 'stats') updateStats();
+            if (tab === 'rehearse') updateRehearse();
+            if (tab === 'visual') updateVisualization();
+        }
+
+        function addActor() {
+            const name = document.getElementById('actorName').value.trim();
+            if (!name) return;
+            
+            actors.push(name);
+            document.getElementById('actorName').value = '';
+            updateActorsList();
+            updateActorSelects();
+            updateSelectionActorDropdown();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function removeActor(index) {
+            actors.splice(index, 1);
+            characters = characters.filter(c => c.actor !== actors[index]);
+            updateActorsList();
+            updateActorSelects();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function updateActorsList() {
+            const list = document.getElementById('actorsList');
+            list.innerHTML = actors.map((actor, i) => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span class="font-medium">${actor}</span>
+                    <button onclick="removeActor(${i})" class="text-red-500 hover:text-red-700">
+                        ✕
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function updateActorSelects() {
+            const selects = [
+                document.getElementById('characterActor'),
+                document.getElementById('rehearsingActor')
+            ];
+            
+            selects.forEach(select => {
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">Sélectionner un acteur</option>';
+                actors.forEach(actor => {
+                    const option = document.createElement('option');
+                    option.value = actor;
+                    option.textContent = actor;
+                    select.appendChild(option);
+                });
+                select.value = currentValue;
+            });
+        }
+
+        function addCharacter() {
+            const name = document.getElementById('characterName').value.trim();
+            const actor = document.getElementById('characterActor').value;
+            const text = document.getElementById('characterText').value.trim();
+            
+            if (!name || !actor || !text) {
+                alert('Veuillez remplir tous les champs');
+                return;
+            }
+            
+            characters.push({ name, actor, text });
+            document.getElementById('characterName').value = '';
+            document.getElementById('characterActor').value = '';
+            document.getElementById('characterText').value = '';
+            updateCharactersList();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function removeCharacter(index) {
+            characters.splice(index, 1);
+            updateCharactersList();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+        }
+
+        function updateCharactersList() {
+            const list = document.getElementById('charactersList');
+            list.innerHTML = characters.map((char, i) => {
+                const cleanText = removeCharacterNameFromText(char.text, char.name);
+                return `
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <span class="font-bold text-lg">${char.name}</span>
+                            <span class="ml-2 text-sm text-gray-600">(${char.actor})</span>
+                        </div>
+                        <button onclick="removeCharacter(${i})" class="text-red-500 hover:text-red-700">
+                            ✕
+                        </button>
+                    </div>
+                    <p class="text-gray-700 text-sm">${cleanText}</p>
+                    <p class="text-xs text-gray-500 mt-2">${countWords(cleanText)} mots</p>
+                </div>
+            `}).join('');
+        }
+
+        function countWords(text) {
+            return text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        }
+        
+        function updateRate(value) {
+            document.getElementById('rateValue').textContent = value;
+        }
+
+        function updatePause(value) {
+            document.getElementById('pauseValue').textContent = value;
+        }
+
+        function updateRehearse() {
+            const rehearsingActor = document.getElementById('rehearsingActor').value;
+            const list = document.getElementById('rehearseList');
+            
+            if (!rehearsingActor) {
+                list.innerHTML = '<p class="text-gray-500">Sélectionnez un acteur en répétition</p>';
+                return;
+            }
+            
+            // Get selected scene filter
+            const sceneFilter = document.getElementById('sceneFilter').value;
+            
+            // Populate scene dropdown with available scenes
+            populateSceneFilter();
+            
+            // Filter characters by actor and optionally by scene
+            let actorTexts = characters.filter(c => c.actor === rehearsingActor);
+            let otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+            
+            if (sceneFilter) {
+                actorTexts = actorTexts.filter(c => c.scene === sceneFilter);
+                otherTexts = otherTexts.filter(c => c.scene === sceneFilter);
+            }
+            
+            list.innerHTML = `
+                <div class="mb-6">
+                    <h3 class="font-bold text-green-700 mb-3">✓ Vos répliques (${rehearsingActor})${sceneFilter ? ` - ${sceneFilter}` : ''}:</h3>
+                    ${actorTexts.map((char, i) => {
+                        const cleanText = removeCharacterNameFromText(char.text, char.name);
+                        const globalIndex = characters.findIndex(c => c === char);
+                        return `
+                        <div id="rehearse-line-${globalIndex}" class="rehearse-line-item p-3 bg-green-50 rounded-lg mb-2 border-l-4 border-green-500 transition-all duration-300">
+                            <div class="flex justify-between items-start mb-1">
+                                <p class="font-semibold text-green-900">${char.name}</p>
+                                <span class="text-xs bg-green-200 px-2 py-1 rounded">${char.scene || 'SCÈNE 1'}</span>
+                            </div>
+                            <p class="text-gray-700">${cleanText}</p>
+                            <p class="text-xs text-gray-500 mt-1">${countWords(cleanText)} mots</p>
+                        </div>
+                    `}).join('') || '<p class="text-gray-500">Aucune réplique</p>'}
+                </div>
+                
+                <div>
+                    <h3 class="font-bold text-blue-700 mb-3">🔊 Répliques des autres acteurs (sélectionnez celles à répéter)${sceneFilter ? ` - ${sceneFilter}` : ''}:</h3>
+                    ${otherTexts.map((char, i) => {
+                        const cleanText = removeCharacterNameFromText(char.text, char.name);
+                        const globalIndex = characters.findIndex(c => c === char);
+                        return `
+                        <div id="rehearse-line-${globalIndex}" class="rehearse-line-item p-3 bg-blue-50 rounded-lg mb-2 border-l-4 border-blue-500 transition-all duration-300">
+                            <div class="flex items-start gap-3">
+                                <input type="checkbox" id="check-${i}" class="mt-1 w-4 h-4 text-blue-600 rehearse-checkbox" checked>
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <label for="check-${i}" class="font-semibold text-blue-900 cursor-pointer">${char.name} (${char.actor})</label>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs bg-blue-200 px-2 py-1 rounded">${char.scene || 'SCÈNE 1'}</span>
+                                            <button onclick="speakSingle(${i})" class="text-blue-600 hover:text-blue-800 text-sm">
+                                                ▶ Lire
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-gray-700">${cleanText}</p>
+                                    <p class="text-xs text-gray-500 mt-1">${countWords(cleanText)} mots</p>
+                                </div>
+                            </div>
+                        </div>
+                    `}).join('') || '<p class="text-gray-500">Aucune réplique</p>'}
+                </div>
+            `;
+        }
+
+        function populateSceneFilter() {
+            const sceneFilter = document.getElementById('sceneFilter');
+            const currentValue = sceneFilter.value;
+            
+            // Get unique scenes from all characters
+            const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
+            
+            sceneFilter.innerHTML = '<option value="">Toutes les scènes</option>';
+            scenes.forEach(scene => {
+                const option = document.createElement('option');
+                option.value = scene;
+                option.textContent = scene;
+                sceneFilter.appendChild(option);
+            });
+            
+            // Restore previous selection if it still exists
+            if (currentValue && scenes.includes(currentValue)) {
+                sceneFilter.value = currentValue;
+            }
+        }
+
+        function removeCharacterNameFromText(text, characterName) {
+            // Remove character name from the beginning of the text if present
+            // Supports formats: "PERSONNAGE: texte", "PERSONNAGE - texte", "Personnage. texte"
+            const patterns = [
+                new RegExp(`^${escapeRegex(characterName)}\\s*[:.-]\\s*`, 'i'),
+                new RegExp(`^${escapeRegex(characterName.toUpperCase())}\\s*[:.-]\\s*`),
+            ];
+            
+            let cleanText = text;
+            for (let pattern of patterns) {
+                cleanText = cleanText.replace(pattern, '');
+            }
+            
+            return cleanText.trim();
+        }
+
+        function escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function selectAllOthers() {
+            document.querySelectorAll('.rehearse-checkbox').forEach(cb => cb.checked = true);
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('.rehearse-checkbox').forEach(cb => cb.checked = false);
+        }
+
+        function playSelected() {
+            const rehearsingActor = document.getElementById('rehearsingActor').value;
+            if (!rehearsingActor) {
+                alert('Veuillez sélectionner un acteur en répétition');
+                return;
+            }
+            
+            stopSpeech();
+            
+            // Get all character lines in order, marking which belong to rehearsing actor
+            const allLines = characters.map((char, i) => ({
+                text: char.text,
+                name: char.name,
+                actor: char.actor,
+                isMyLine: char.actor === rehearsingActor,
+                index: i,
+                scene: char.scene
+            }));
+            
+            // Filter based on checkbox selection for other actors' lines
+            const selectedLines = [];
+            
+            allLines.forEach((line, i) => {
+                if (line.isMyLine) {
+                    // Always include the rehearsing actor's lines
+                    selectedLines.push(line);
+                } else {
+                    // Check if this "other" line is selected
+                    const otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+                    const otherIndex = otherTexts.findIndex(c => c.text === line.text && c.name === line.name);
+                    const checkbox = document.getElementById(`check-${otherIndex}`);
+                    if (checkbox && checkbox.checked) {
+                        selectedLines.push(line);
+                    }
+                }
+            });
+            
+            if (selectedLines.length === 0) {
+                alert('Aucune réplique à lire');
+                return;
+            }
+            
+            // Group chorus lines - only keep one instance per unique text
+            const processedTexts = new Map();
+            const consolidatedLines = [];
+            
+            selectedLines.forEach(line => {
+                const cleanedText = removeCharacterNameFromText(line.text, line.name).trim();
+                
+                if (!processedTexts.has(cleanedText)) {
+                    // First time seeing this text
+                    const chorusInfo = getChorusInfo(cleanedText);
+                    
+                    if (chorusInfo.isChorus) {
+                        // This is a chorus line - add it once with all actors
+                        consolidatedLines.push({
+                            ...line,
+                            isChorus: true,
+                            allActors: chorusInfo.actors,
+                            allCharacters: chorusInfo.characters,
+                            isMyLine: chorusInfo.actors.includes(rehearsingActor)
+                        });
+                    } else {
+                        // Regular line
+                        consolidatedLines.push({
+                            ...line,
+                            isChorus: false
+                        });
+                    }
+                    
+                    processedTexts.set(cleanedText, true);
+                } else {
+                    // Already processed this text (it's a duplicate chorus line)
+                    // Skip it
+                }
+            });
+            
+            // Initialize rehearsal tracking
+            rehearsalLines = consolidatedLines;
+            currentRehearsalIndex = 0;
+            totalRehearsalLines = consolidatedLines.length;
+            
+            // Show progress view
+            document.getElementById('rehearseProgressView').classList.remove('hidden');
+            updateProgressDisplay();
+            
+            isSpeaking = true;
+            speakSequenceWithPauses(consolidatedLines, 0);
+        }
+
+        function getChorusInfo(cleanedText) {
+            // Find all actors and characters who say this text
+            const actors = new Set();
+            const characterNames = new Set();
+            
+            characters.forEach(char => {
+                const charCleanedText = removeCharacterNameFromText(char.text, char.name).trim();
+                if (charCleanedText === cleanedText || 
+                    (cleanedText.length > 3 && charCleanedText.includes(cleanedText)) ||
+                    (charCleanedText.length > 3 && cleanedText.includes(charCleanedText))) {
+                    actors.add(char.actor);
+                    characterNames.add(char.name);
+                }
+            });
+            
+            return {
+                isChorus: actors.size > 1,
+                actors: Array.from(actors),
+                characters: Array.from(characterNames)
+            };
+        }
+
+        function updateProgressDisplay() {
+            // Update counter
+            document.getElementById('progressCounter').textContent = 
+                `${currentRehearsalIndex + 1}/${totalRehearsalLines}`;
+            
+            // Update overall progress bar
+            const progressPercent = ((currentRehearsalIndex + 1) / totalRehearsalLines) * 100;
+            document.getElementById('overallProgress').style.width = progressPercent + '%';
+            
+            // Update current line display
+            if (currentRehearsalIndex < rehearsalLines.length) {
+                const currentLine = rehearsalLines[currentRehearsalIndex];
+                const cleanText = removeCharacterNameFromText(currentLine.text, currentLine.name);
+                const wordCount = countWords(cleanText);
+                const isChorus = currentLine.isChorus || false;
+                
+                // Set icon based on type
+                let icon = '🔊';
+                if (currentLine.isMyLine) {
+                    icon = isChorus ? '🎭' : '⏸';
+                }
+                
+                // Build speaker label
+                let speakerLabel = '';
+                if (isChorus && currentLine.allCharacters && currentLine.allActors) {
+                    speakerLabel = `${currentLine.allCharacters.join(' + ')} (🎭 ${currentLine.allActors.join(' + ')})`;
+                } else {
+                    speakerLabel = `${currentLine.name} (${currentLine.actor})`;
+                }
+                
+                document.getElementById('currentLineIcon').textContent = icon;
+                document.getElementById('currentLineSpeaker').textContent = speakerLabel;
+                document.getElementById('currentLineInfo').textContent = 
+                    `• ${wordCount} mots`;
+                document.getElementById('currentLineText').textContent = cleanText;
+                
+                // Highlight current line in list
+                updateLineHighlighting();
+            }
+            
+            // Update previous line preview
+            const previousLinePreview = document.getElementById('previousLinePreview');
+            if (currentRehearsalIndex > 0) {
+                const previousLine = rehearsalLines[currentRehearsalIndex - 1];
+                const cleanText = removeCharacterNameFromText(previousLine.text, previousLine.name);
+                
+                let prevSpeaker = '';
+                if (previousLine.isChorus && previousLine.allActors) {
+                    prevSpeaker = `🎭 ${previousLine.allActors.join(' + ')}`;
+                } else {
+                    prevSpeaker = `${previousLine.name} (${previousLine.actor})`;
+                }
+                
+                document.getElementById('previousLineSpeaker').textContent = prevSpeaker;
+                document.getElementById('previousLineText').textContent = 
+                    cleanText.length > 80 ? cleanText.substring(0, 80) + '...' : cleanText;
+                previousLinePreview.classList.remove('hidden');
+            } else {
+                previousLinePreview.classList.add('hidden');
+            }
+            
+            // Update next line preview
+            const nextLinePreview = document.getElementById('nextLinePreview');
+            if (currentRehearsalIndex + 1 < rehearsalLines.length) {
+                const nextLine = rehearsalLines[currentRehearsalIndex + 1];
+                const cleanText = removeCharacterNameFromText(nextLine.text, nextLine.name);
+                
+                let nextSpeaker = '';
+                if (nextLine.isChorus && nextLine.allActors) {
+                    nextSpeaker = `🎭 ${nextLine.allActors.join(' + ')}`;
+                } else {
+                    nextSpeaker = `${nextLine.name} (${nextLine.actor})`;
+                }
+                
+                document.getElementById('nextLineSpeaker').textContent = nextSpeaker;
+                document.getElementById('nextLineText').textContent = 
+                    cleanText.length > 80 ? cleanText.substring(0, 80) + '...' : cleanText;
+                nextLinePreview.classList.remove('hidden');
+            } else {
+                nextLinePreview.classList.add('hidden');
+            }
+        }
+
+        function updateLineHighlighting() {
+            // Remove all previous highlighting
+            document.querySelectorAll('.rehearse-line-item').forEach(el => {
+                el.classList.remove('line-completed', 'line-current', 'line-upcoming');
+            });
+            
+            // Apply highlighting based on position
+            rehearsalLines.forEach((line, idx) => {
+                const element = document.getElementById(`rehearse-line-${line.index}`);
+                if (element) {
+                    if (idx < currentRehearsalIndex) {
+                        element.classList.add('line-completed');
+                    } else if (idx === currentRehearsalIndex) {
+                        element.classList.add('line-current', 'slide-in');
+                        // Don't auto-scroll - let user control their view
+                    } else {
+                        element.classList.add('line-upcoming');
+                    }
+                }
+            });
+        }
+
+        function speakSequenceWithPauses(lines, index) {
+            if (index >= lines.length || !isSpeaking) {
+                hideRehearsalStatus();
+                document.getElementById('rehearseProgressView').classList.add('hidden');
+                // Mark all as completed
+                document.querySelectorAll('.rehearse-line-item').forEach(el => {
+                    el.classList.add('line-completed');
+                    el.classList.remove('line-current', 'line-upcoming');
+                });
+                return;
+            }
+            
+            currentRehearsalIndex = index;
+            updateProgressDisplay();
+            
+            const line = lines[index];
+            const isChorus = line.isChorus || false;
+            
+            if (line.isMyLine && !isChorus) {
+                // Solo line for the rehearsing actor - show pause
+                showRehearsalPause(line, () => {
+                    speakSequenceWithPauses(lines, index + 1);
+                });
+            } else if (line.isMyLine && isChorus) {
+                // Chorus line - speak it so actor can say it at the same time
+                hideRehearsalStatus();
+                const cleanText = removeCharacterNameFromText(line.text, line.name);
+                
+                // Show special chorus indicator
+                const statusDiv = document.getElementById('rehearseStatus');
+                const myLineDiv = document.getElementById('currentMyLine');
+                statusDiv.classList.remove('hidden');
+                myLineDiv.innerHTML = `<strong class="text-purple-600">🎭 CHŒUR - Dites cette réplique en même temps que la voix</strong>`;
+                
+                speakText(cleanText, null, () => {
+                    hideRehearsalStatus();
+                    speakSequenceWithPauses(lines, index + 1);
+                });
+            } else {
+                // Other actor's line - speak normally
+                hideRehearsalStatus();
+                const cleanText = removeCharacterNameFromText(line.text, line.name);
+                speakText(cleanText, null, () => {
+                    speakSequenceWithPauses(lines, index + 1);
+                });
+            }
+        }
+
+        function isLineInChorus(line) {
+            // Check if this exact text is said by multiple actors
+            const cleanedText = removeCharacterNameFromText(line.text, line.name).trim();
+            
+            // Count how many different actors say this same text
+            const actorsSayingThis = new Set();
+            characters.forEach(char => {
+                const charCleanedText = removeCharacterNameFromText(char.text, char.name).trim();
+                if (charCleanedText === cleanedText || 
+                    (cleanedText.length > 3 && charCleanedText.includes(cleanedText)) ||
+                    (charCleanedText.length > 3 && cleanedText.includes(charCleanedText))) {
+                    actorsSayingThis.add(char.actor);
+                }
+            });
+            
+            return actorsSayingThis.size > 1;
+        }
+
+        function showRehearsalPause(line, onComplete) {
+            const cleanText = removeCharacterNameFromText(line.text, line.name);
+            const pauseDuration = calculatePauseDuration(cleanText);
+            const wordCount = countWords(cleanText);
+            
+            const statusDiv = document.getElementById('rehearseStatus');
+            const myLineDiv = document.getElementById('currentMyLine');
+            const progressBar = document.getElementById('pauseProgress');
+            
+            // Show the status with word count
+            statusDiv.classList.remove('hidden');
+            const displayText = cleanText.substring(0, 150);
+            myLineDiv.innerHTML = `<strong>${line.name}</strong> (${wordCount} mots, ${(pauseDuration/1000).toFixed(1)}s): ${displayText}${cleanText.length > 150 ? '...' : ''}`;
+            
+            // Animate progress bar
+            progressBar.style.width = '0%';
+            progressBar.style.transition = 'none';
+            
+            setTimeout(() => {
+                progressBar.style.transition = `width ${pauseDuration}ms linear`;
+                progressBar.style.width = '100%';
+            }, 50);
+            
+            // Set timeout for pause duration
+            pauseTimeout = setTimeout(() => {
+                hideRehearsalStatus();
+                onComplete();
+            }, pauseDuration);
+        }
+
+        function hideRehearsalStatus() {
+            const statusDiv = document.getElementById('rehearseStatus');
+            statusDiv.classList.add('hidden');
+            const progressBar = document.getElementById('pauseProgress');
+            progressBar.style.width = '0%';
+            
+            if (pauseTimeout) {
+                clearTimeout(pauseTimeout);
+                pauseTimeout = null;
+            }
+        }
+
+        function speakSingle(index) {
+            const rehearsingActor = document.getElementById('rehearsingActor').value;
+            const otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+            
+            if (index >= otherTexts.length) return;
+            
+            stopSpeech();
+            const cleanText = removeCharacterNameFromText(otherTexts[index].text, otherTexts[index].name);
+            speakText(cleanText, null);
+        }
+
+        function speakText(text, elementId, onEnd) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            const rate = parseFloat(document.getElementById('speechRate').value);
+            utterance.rate = rate;
+            
+            const voiceIndex = document.getElementById('voiceSelect').value;
+            if (voiceIndex !== '') {
+                utterance.voice = availableVoices[parseInt(voiceIndex)];
+            }
+            
+            if (elementId) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    utterance.onstart = () => element.classList.add('speaking');
+                    utterance.onend = () => {
+                        element.classList.remove('speaking');
+                        if (onEnd) onEnd();
+                    };
+                }
+            } else {
+                utterance.onend = () => {
+                    if (onEnd) onEnd();
+                };
+            }
+            
+            currentSpeech = utterance;
+            speechSynthesis.speak(utterance);
+        }
+
+        function stopSpeech() {
+            isSpeaking = false;
+            speechSynthesis.cancel();
+            hideRehearsalStatus();
+            document.querySelectorAll('.speaking').forEach(el => {
+                el.classList.remove('speaking');
+            });
+        }
+
+        function updateStats() {
+            const stats = actors.map(actor => {
+                const actorChars = characters.filter(c => c.actor === actor);
+                const totalWords = actorChars.reduce((sum, char) => {
+                    const cleanText = removeCharacterNameFromText(char.text, char.name);
+                    return sum + countWords(cleanText);
+                }, 0);
+                return {
+                    actor,
+                    characters: actorChars.length,
+                    words: totalWords
+                };
+            });
+            
+            const total = stats.reduce((sum, s) => sum + s.words, 0);
+            
+            const list = document.getElementById('statsList');
+            list.innerHTML = stats.map(stat => `
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-bold">${stat.actor}</h3>
+                        <span class="text-2xl font-bold text-blue-600">${stat.words} mots</span>
+                    </div>
+                    <div class="text-sm text-gray-600 mb-2">
+                        ${stat.characters} personnage(s)
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-4">
+                        <div class="bg-blue-500 h-4 rounded-full" style="width: ${total > 0 ? (stat.words / total * 100) : 0}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${total > 0 ? ((stat.words / total * 100).toFixed(1)) : 0}% du total
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🎭 Application théâtrale chargée');
+            
+            // Load from Firebase or localStorage
+            loadFromFirebase();
+            
+            // Setup real-time sync if Firebase is enabled
+            if (isFirebaseEnabled) {
+                setupFirebaseRealtimeSync();
+            }
+        });
+    </script>
+</body>
+</html>
