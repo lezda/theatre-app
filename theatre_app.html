@@ -182,20 +182,23 @@
         <h1 class="text-3xl font-bold text-gray-800 mb-6">🎭 Assistant de Répétition Théâtrale</h1>
         
         <!-- Tabs -->
-        <div class="flex space-x-2 mb-6 border-b">
-            <button onclick="switchTab('import')" id="tab-import" class="px-4 py-2 font-semibold border-b-2 border-blue-500 text-blue-600">
+        <div class="flex space-x-2 mb-6 border-b overflow-x-auto">
+            <button onclick="switchTab('import')" id="tab-import" class="px-4 py-2 font-semibold border-b-2 border-blue-500 text-blue-600 whitespace-nowrap">
                 Texte Complet
             </button>
-            <button onclick="switchTab('setup')" id="tab-setup" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+            <button onclick="switchTab('setup')" id="tab-setup" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
                 Configuration
             </button>
-            <button onclick="switchTab('visual')" id="tab-visual" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+            <button onclick="switchTab('visual')" id="tab-visual" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
                 🎨 Visualisation
             </button>
-            <button onclick="switchTab('rehearse')" id="tab-rehearse" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+            <button onclick="switchTab('comparison')" id="tab-comparison" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
+                📊 Comparaison
+            </button>
+            <button onclick="switchTab('rehearse')" id="tab-rehearse" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
                 Répétition
             </button>
-            <button onclick="switchTab('stats')" id="tab-stats" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+            <button onclick="switchTab('stats')" id="tab-stats" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
                 Statistiques
             </button>
         </div>
@@ -491,6 +494,44 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             </div>
         </div>
 
+        <!-- Comparison Tab -->
+        <div id="content-comparison" class="hidden space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">📊 Comparaison : Attribué vs Non Attribué</h2>
+                    <button onclick="updateComparison()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        🔄 Actualiser
+                    </button>
+                </div>
+                
+                <div class="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
+                    <p class="text-sm text-blue-900">
+                        <strong>💡 Comment ça marche :</strong> Cette vue compare le texte complet avec vos attributions.
+                        <br>• <span class="font-semibold text-green-600">Vert</span> = Texte déjà attribué à un acteur
+                        <br>• <span class="font-semibold text-gray-600">Gris</span> = Texte non encore attribué (à faire)
+                    </p>
+                </div>
+
+                <!-- Filter by scene -->
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-2">Filtrer par scène:</label>
+                    <select id="comparisonSceneFilter" onchange="updateComparison()" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Toutes les scènes</option>
+                    </select>
+                </div>
+
+                <!-- Statistics Summary -->
+                <div id="comparisonStats" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <!-- Will be populated by JS -->
+                </div>
+
+                <!-- Comparison View -->
+                <div id="comparisonContent" class="space-y-4">
+                    <p class="text-gray-400 italic">Chargez du texte pour voir la comparaison.</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Stats Tab -->
         <div id="content-stats" class="hidden">
             <div class="bg-white rounded-lg shadow p-6">
@@ -632,6 +673,8 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     updateAssignmentsList();
                     updateVisualization();
                     updateStats();
+                    updateActorSelects();
+                    populateSceneFilter();
                     
                     if (fullTextContent) {
                         document.getElementById('fullText').value = fullTextContent;
@@ -723,6 +766,8 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 updateAssignmentsList();
                 updateVisualization();
                 updateStats();
+                updateActorSelects();
+                populateSceneFilter();
                 
                 console.log('📥 Données locales chargées');
             } catch (error) {
@@ -769,6 +814,17 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
+            // Build legend for actors
+            legend.innerHTML = actors.map(actor => {
+                const color = getActorColor(actor);
+                return `
+                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
+                        <div class="w-6 h-6 rounded" style="background-color: ${color};"></div>
+                        <span class="font-semibold text-sm">${actor}</span>
+                    </div>
+                `;
+            }).join('');
+            
             // Populate scene filter
             const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
             const sceneFilterSelect = document.getElementById('visualSceneFilter');
@@ -783,17 +839,6 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             if (currentSceneValue && scenes.includes(currentSceneValue)) {
                 sceneFilterSelect.value = currentSceneValue;
             }
-            
-            // Build legend
-            legend.innerHTML = actors.map(actor => {
-                const color = getActorColor(actor);
-                return `
-                    <div class="flex items-center gap-2 p-2 bg-white rounded border">
-                        <div class="w-6 h-6 rounded" style="background-color: ${color};"></div>
-                        <span class="font-semibold text-sm">${actor}</span>
-                    </div>
-                `;
-            }).join('');
             
             // Filter characters by scene if needed
             let filteredChars = characters;
@@ -832,7 +877,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                         
                         relatedSpeakers.push({
                             actor: otherItem.original.actor,
-                            character: otherItem.original.character,
+                            character: otherItem.original.name,
                             text: otherCleaned,
                             index: otherIdx
                         });
@@ -894,10 +939,28 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 const displayText = relatedSpeakers.reduce((longest, curr) => 
                     curr.text.length > longest.length ? curr.text : longest, cleanedText);
                 
+                // Find the first character index for edit/delete functionality
+                const charIndex = characters.findIndex(c => 
+                    c.name === char.name && 
+                    c.actor === char.actor && 
+                    c.scene === charScene &&
+                    removeCharacterNameFromText(c.text, c.name).trim() === cleanedText
+                );
+                
                 html += `
                     <div style="${style}">
-                        <div style="font-weight: bold; margin-bottom: 4px; ${isChorus ? 'color: white;' : `color: ${getActorColor(uniqueActors[0])};`}">
-                            ${characterLabel} (${actorLabel})
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
+                            <div style="font-weight: bold; ${isChorus ? 'color: white;' : `color: ${getActorColor(uniqueActors[0])};`}">
+                                ${characterLabel} (${actorLabel})
+                            </div>
+                            <div style="display: flex; gap: 4px;">
+                                <button onclick="editAssignment(${charIndex})" class="text-xs px-2 py-1 rounded ${isChorus ? 'bg-white text-purple-600' : 'bg-gray-200 text-gray-700'} hover:opacity-80" title="Modifier l'attribution">
+                                    ✏️
+                                </button>
+                                <button onclick="deleteAssignment(${charIndex})" class="text-xs px-2 py-1 rounded ${isChorus ? 'bg-white text-red-600' : 'bg-red-100 text-red-600'} hover:opacity-80" title="Supprimer">
+                                    🗑️
+                                </button>
+                            </div>
                         </div>
                         <div style="${isChorus ? 'color: white;' : 'color: #1f2937;'}">${displayText}</div>
                     </div>
@@ -905,6 +968,130 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             });
             
             visualText.innerHTML = html || '<p class="text-gray-400 italic">Aucune réplique à afficher pour cette scène.</p>';
+        }
+        
+        function editAssignment(charIndex) {
+            if (charIndex < 0 || charIndex >= characters.length) {
+                alert('Erreur: attribution introuvable');
+                return;
+            }
+            
+            const char = characters[charIndex];
+            
+            // Create edit dialog
+            const dialog = document.createElement('div');
+            dialog.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+            dialog.innerHTML = `
+                <div style="background: white; padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <h3 style="font-size: 20px; font-weight: bold; margin-bottom: 16px;">Modifier l'attribution</h3>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 4px;">Personnage:</label>
+                        <input type="text" id="edit-char-name" value="${char.name}" 
+                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 4px;">Acteur:</label>
+                        <select id="edit-char-actor" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                            ${actors.map(actor => `<option value="${actor}" ${actor === char.actor ? 'selected' : ''}>${actor}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 4px;">Scène:</label>
+                        <input type="text" id="edit-char-scene" value="${char.scene || 'SCÈNE 1'}" 
+                               style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 4px;">Texte:</label>
+                        <textarea id="edit-char-text" rows="6" 
+                                  style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit;">${char.text}</textarea>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button onclick="closeEditDialog()" 
+                                style="padding: 8px 16px; background: #e5e7eb; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                            Annuler
+                        </button>
+                        <button onclick="saveEdit(${charIndex})" 
+                                style="padding: 8px 16px; background: #3b82f6; color: white; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                            Sauvegarder
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            dialog.id = 'editDialog';
+            document.body.appendChild(dialog);
+        }
+        
+        function closeEditDialog() {
+            const dialog = document.getElementById('editDialog');
+            if (dialog) dialog.remove();
+        }
+        
+        function saveEdit(charIndex) {
+            const newName = document.getElementById('edit-char-name').value.trim();
+            const newActor = document.getElementById('edit-char-actor').value;
+            const newScene = document.getElementById('edit-char-scene').value.trim();
+            const newText = document.getElementById('edit-char-text').value.trim();
+            
+            if (!newName || !newActor || !newText) {
+                alert('Veuillez remplir tous les champs');
+                return;
+            }
+            
+            // Update the character
+            characters[charIndex] = {
+                name: newName,
+                actor: newActor,
+                scene: newScene,
+                text: newText
+            };
+            
+            // Close dialog
+            closeEditDialog();
+            
+            // Update displays
+            updateVisualization();
+            updateCharactersList();
+            updateAssignmentsList();
+            updateStats();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+            
+            alert('✓ Attribution modifiée avec succès');
+        }
+        
+        function deleteAssignment(charIndex) {
+            if (charIndex < 0 || charIndex >= characters.length) {
+                alert('Erreur: attribution introuvable');
+                return;
+            }
+            
+            const char = characters[charIndex];
+            const confirmMsg = `Supprimer cette attribution?\n\nPersonnage: ${char.name}\nActeur: ${char.actor}\nTexte: ${char.text.substring(0, 100)}${char.text.length > 100 ? '...' : ''}`;
+            
+            if (!confirm(confirmMsg)) return;
+            
+            // Remove from characters array
+            characters.splice(charIndex, 1);
+            
+            // Update displays
+            updateVisualization();
+            updateCharactersList();
+            updateAssignmentsList();
+            updateStats();
+            
+            // Save to Firebase
+            saveToFirebase();
+            saveToLocalStorage();
+            
+            alert('✓ Attribution supprimée');
         }
 
         function saveSceneNote(sceneName, noteText) {
@@ -1951,7 +2138,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
         }
 
         function switchTab(tab) {
-            ['import', 'setup', 'visual', 'rehearse', 'stats'].forEach(t => {
+            ['import', 'setup', 'visual', 'comparison', 'rehearse', 'stats'].forEach(t => {
                 const content = document.getElementById(`content-${t}`);
                 const tabBtn = document.getElementById(`tab-${t}`);
                 if (content) content.classList.add('hidden');
@@ -1968,6 +2155,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             if (tab === 'stats') updateStats();
             if (tab === 'rehearse') updateRehearse();
             if (tab === 'visual') updateVisualization();
+            if (tab === 'comparison') updateComparison();
         }
 
         function addActor() {
@@ -2219,13 +2407,22 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             
             stopSpeech();
             
+            // Get scene filter
+            const sceneFilter = document.getElementById('sceneFilter').value;
+            
+            // Filter characters by scene first if needed
+            let filteredCharacters = characters;
+            if (sceneFilter) {
+                filteredCharacters = characters.filter(c => c.scene === sceneFilter);
+            }
+            
             // Get all character lines in order, marking which belong to rehearsing actor
-            const allLines = characters.map((char, i) => ({
+            const allLines = filteredCharacters.map((char, i) => ({
                 text: char.text,
                 name: char.name,
                 actor: char.actor,
                 isMyLine: char.actor === rehearsingActor,
-                index: i,
+                index: characters.indexOf(char), // Use original index
                 scene: char.scene
             }));
             
@@ -2238,7 +2435,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     selectedLines.push(line);
                 } else {
                     // Check if this "other" line is selected
-                    const otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+                    const otherTexts = filteredCharacters.filter(c => c.actor !== rehearsingActor);
                     const otherIndex = otherTexts.findIndex(c => c.text === line.text && c.name === line.name);
                     const checkbox = document.getElementById(`check-${otherIndex}`);
                     if (checkbox && checkbox.checked) {
@@ -2537,7 +2734,13 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
 
         function speakSingle(index) {
             const rehearsingActor = document.getElementById('rehearsingActor').value;
-            const otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+            const sceneFilter = document.getElementById('sceneFilter').value;
+            
+            // Filter by actor and scene
+            let otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+            if (sceneFilter) {
+                otherTexts = otherTexts.filter(c => c.scene === sceneFilter);
+            }
             
             if (index >= otherTexts.length) return;
             
@@ -2582,6 +2785,205 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             document.querySelectorAll('.speaking').forEach(el => {
                 el.classList.remove('speaking');
             });
+        }
+
+        function updateComparison() {
+            const content = document.getElementById('comparisonContent');
+            const statsDiv = document.getElementById('comparisonStats');
+            const sceneFilter = document.getElementById('comparisonSceneFilter').value;
+            
+            if (!fullTextContent || !fullTextContent.trim()) {
+                content.innerHTML = '<p class="text-gray-400 italic">Aucun texte complet chargé. Allez dans l\'onglet "Texte Complet" pour charger votre pièce.</p>';
+                statsDiv.innerHTML = '';
+                return;
+            }
+            
+            // Parse the full text to identify assigned vs unassigned
+            const lines = fullTextContent.split('\n');
+            let currentScene = 'SCÈNE 1';
+            const segments = [];
+            let currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
+            
+            // Scene detection pattern
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            // Character pattern
+            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
+            
+            // Populate scene filter
+            const allScenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))];
+            const detectedScenes = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmedLine = line.trim();
+                
+                if (!trimmedLine) continue;
+                
+                // Check for scene marker
+                const sceneMatch = trimmedLine.match(scenePattern);
+                if (sceneMatch) {
+                    // Save current segment
+                    if (currentSegment.text.trim()) {
+                        segments.push(currentSegment);
+                    }
+                    currentScene = trimmedLine;
+                    if (!detectedScenes.includes(currentScene)) {
+                        detectedScenes.push(currentScene);
+                    }
+                    currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
+                    continue;
+                }
+                
+                // Check for character line
+                const charMatch = trimmedLine.match(characterPattern);
+                if (charMatch) {
+                    const characterName = charMatch[1].trim();
+                    const lineText = charMatch[2];
+                    
+                    // Check if this line is part of an assigned character
+                    const assigned = characters.find(c => 
+                        c.name === characterName && 
+                        c.text.includes(trimmedLine) &&
+                        (c.scene || 'SCÈNE 1') === currentScene
+                    );
+                    
+                    if (assigned) {
+                        // Save previous unassigned segment
+                        if (currentSegment.text.trim()) {
+                            segments.push(currentSegment);
+                        }
+                        
+                        // Create assigned segment
+                        const assignedText = removeCharacterNameFromText(assigned.text, assigned.name);
+                        segments.push({
+                            type: 'assigned',
+                            text: assignedText,
+                            scene: currentScene,
+                            character: assigned.name,
+                            actor: assigned.actor
+                        });
+                        
+                        currentSegment = { type: 'unassigned', text: '', scene: currentScene, lines: [] };
+                        continue;
+                    }
+                }
+                
+                // Add line to current segment
+                currentSegment.text += (currentSegment.text ? '\n' : '') + line;
+                currentSegment.lines.push(line);
+            }
+            
+            // Save final segment
+            if (currentSegment.text.trim()) {
+                segments.push(currentSegment);
+            }
+            
+            // Update scene filter dropdown
+            const sceneFilterSelect = document.getElementById('comparisonSceneFilter');
+            const currentValue = sceneFilterSelect.value;
+            sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
+            [...new Set([...allScenes, ...detectedScenes])].sort().forEach(scene => {
+                const option = document.createElement('option');
+                option.value = scene;
+                option.textContent = scene;
+                sceneFilterSelect.appendChild(option);
+            });
+            if (currentValue) sceneFilterSelect.value = currentValue;
+            
+            // Filter segments by scene if needed
+            let filteredSegments = segments;
+            if (sceneFilter) {
+                filteredSegments = segments.filter(s => s.scene === sceneFilter);
+            }
+            
+            // Calculate statistics
+            const assignedWords = filteredSegments
+                .filter(s => s.type === 'assigned')
+                .reduce((sum, s) => sum + countWords(s.text), 0);
+            
+            const unassignedWords = filteredSegments
+                .filter(s => s.type === 'unassigned')
+                .reduce((sum, s) => sum + countWords(s.text), 0);
+            
+            const totalWords = assignedWords + unassignedWords;
+            const percentAssigned = totalWords > 0 ? ((assignedWords / totalWords) * 100).toFixed(1) : 0;
+            const percentUnassigned = totalWords > 0 ? ((unassignedWords / totalWords) * 100).toFixed(1) : 0;
+            
+            // Display statistics
+            statsDiv.innerHTML = `
+                <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                    <div class="text-sm font-semibold text-green-900 mb-1">✅ Attribué</div>
+                    <div class="text-2xl font-bold text-green-700">${assignedWords} mots</div>
+                    <div class="text-sm text-green-600">${percentAssigned}% du total</div>
+                </div>
+                
+                <div class="bg-gray-50 border-l-4 border-gray-400 p-4 rounded">
+                    <div class="text-sm font-semibold text-gray-700 mb-1">⏳ Non attribué</div>
+                    <div class="text-2xl font-bold text-gray-600">${unassignedWords} mots</div>
+                    <div class="text-sm text-gray-500">${percentUnassigned}% du total</div>
+                </div>
+                
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                    <div class="text-sm font-semibold text-blue-900 mb-1">📊 Total</div>
+                    <div class="text-2xl font-bold text-blue-700">${totalWords} mots</div>
+                    <div class="text-sm text-blue-600">100% de la pièce</div>
+                </div>
+            `;
+            
+            // Display segments
+            let html = '';
+            let currentSceneDisplay = '';
+            
+            filteredSegments.forEach(segment => {
+                // Show scene header
+                if (segment.scene !== currentSceneDisplay) {
+                    html += `
+                        <div class="text-xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2 mt-4 mb-2">
+                            ${segment.scene}
+                        </div>
+                    `;
+                    currentSceneDisplay = segment.scene;
+                }
+                
+                if (segment.type === 'assigned') {
+                    // Assigned segment
+                    const color = getActorColor(segment.actor);
+                    html += `
+                        <div style="background-color: ${color}22; border-left: 4px solid ${color}; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <div style="font-weight: bold; color: ${color};">
+                                    ✅ ${segment.character} (${segment.actor})
+                                </div>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                    ${countWords(segment.text)} mots
+                                </span>
+                            </div>
+                            <div style="color: #1f2937;">${segment.text.replace(/\n/g, '<br>')}</div>
+                        </div>
+                    `;
+                } else {
+                    // Unassigned segment
+                    const wordCount = countWords(segment.text);
+                    if (wordCount > 0) {
+                        html += `
+                            <div style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <div style="font-weight: bold; color: #6b7280;">
+                                        ⏳ Texte non attribué
+                                    </div>
+                                    <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                        ${wordCount} mots
+                                    </span>
+                                </div>
+                                <div style="color: #4b5563; font-style: italic;">${segment.text.replace(/\n/g, '<br>')}</div>
+                            </div>
+                        `;
+                    }
+                }
+            });
+            
+            content.innerHTML = html || '<p class="text-gray-400 italic">Aucun contenu à afficher pour cette scène.</p>';
         }
 
         function updateStats() {
@@ -2635,6 +3037,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             if (isFirebaseEnabled) {
                 setupFirebaseRealtimeSync();
             }
+            
+            // Populate actor dropdowns
+            updateActorSelects();
+            
+            // Populate scene filter
+            populateSceneFilter();
         });
     </script>
 </body>
