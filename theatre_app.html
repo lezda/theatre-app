@@ -506,22 +506,24 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
 
                 <div class="mb-4">
                     <label class="block text-sm font-semibold mb-2">Débit de lecture (voix IA): <span id="rateValue">1.0</span>x</label>
-                    <input type="range" id="speechRate" min="0.5" max="2.0" step="0.1" value="1.0" 
+                    <input type="range" id="speechRate" min="0.5" max="3.0" step="0.1" value="1.0" 
                            class="w-full" oninput="updateRate(this.value)">
                     <div class="flex justify-between text-xs text-gray-500">
                         <span>0.5x (lent)</span>
-                        <span>2.0x (rapide)</span>
+                        <span>1.5x (normal)</span>
+                        <span>3.0x (très rapide)</span>
                     </div>
                     <p class="text-xs text-gray-600 mt-1">💡 Vitesse de la voix IA pour les autres acteurs</p>
                 </div>
 
                 <div class="mb-4">
                     <label class="block text-sm font-semibold mb-2">Vitesse de lecture silencieuse: <span id="readingSpeedValue">200</span> mots/minute</label>
-                    <input type="range" id="readingSpeed" min="100" max="400" step="25" value="200" 
+                    <input type="range" id="readingSpeed" min="50" max="600" step="25" value="200" 
                            class="w-full" oninput="updateReadingSpeed(this.value)">
                     <div class="flex justify-between text-xs text-gray-500">
-                        <span>100 (lent)</span>
-                        <span>400 (rapide)</span>
+                        <span>50 (très lent)</span>
+                        <span>200 (normal)</span>
+                        <span>600 (très rapide)</span>
                     </div>
                     <p class="text-xs text-gray-600 mt-1">💡 Le temps de pause pour vos répliques sera calculé selon le nombre de mots × votre vitesse de lecture</p>
                 </div>
@@ -1496,20 +1498,68 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
         function loadVoices() {
             availableVoices = speechSynthesis.getVoices();
             const voiceSelect = document.getElementById('voiceSelect');
-            voiceSelect.innerHTML = '<option value="">Voix par défaut</option>';
+            voiceSelect.innerHTML = '';
             
             // Prioritize French voices
             const frenchVoices = availableVoices.filter(v => v.lang.startsWith('fr'));
             const otherVoices = availableVoices.filter(v => !v.lang.startsWith('fr'));
             
-            frenchVoices.forEach((voice, index) => {
+            // Quality scoring for voices (prefer more natural-sounding ones)
+            const scoreVoice = (voice) => {
+                let score = 0;
+                const name = voice.name.toLowerCase();
+                
+                // Prefer voices with these keywords (usually better quality)
+                if (name.includes('google')) score += 10;
+                if (name.includes('enhanced')) score += 8;
+                if (name.includes('premium')) score += 8;
+                if (name.includes('neural')) score += 7;
+                if (name.includes('natural')) score += 7;
+                if (name.includes('wavenet')) score += 6;
+                
+                // Prefer specific good voices
+                if (name.includes('thomas')) score += 5;
+                if (name.includes('amelie')) score += 5;
+                if (name.includes('daniel')) score += 5;
+                
+                // Slightly prefer local voices (usually higher quality)
+                if (voice.localService) score += 2;
+                
+                // Penalize obviously robotic voices
+                if (name.includes('compact')) score -= 3;
+                if (name.includes('samantha')) score -= 2; // Often robotic
+                
+                return score;
+            };
+            
+            // Sort French voices by quality score
+            const sortedFrenchVoices = frenchVoices.sort((a, b) => scoreVoice(b) - scoreVoice(a));
+            
+            // Find best default voice
+            let defaultVoiceIndex = -1;
+            let bestScore = -100;
+            
+            sortedFrenchVoices.forEach((voice, index) => {
                 const option = document.createElement('option');
                 option.value = index;
-                option.textContent = `${voice.name} (${voice.lang})`;
+                const score = scoreVoice(voice);
+                
+                // Mark high-quality voices
+                let label = voice.name;
+                if (score >= 7) {
+                    label += ' ⭐ (Recommandée)';
+                }
+                option.textContent = `${label} (${voice.lang})`;
                 voiceSelect.appendChild(option);
+                
+                // Track best voice for default
+                if (score > bestScore) {
+                    bestScore = score;
+                    defaultVoiceIndex = index;
+                }
             });
             
-            if (frenchVoices.length > 0 && otherVoices.length > 0) {
+            if (sortedFrenchVoices.length > 0 && otherVoices.length > 0) {
                 const separator = document.createElement('option');
                 separator.disabled = true;
                 separator.textContent = '--- Autres langues ---';
@@ -1518,10 +1568,15 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             
             otherVoices.forEach((voice, index) => {
                 const option = document.createElement('option');
-                option.value = frenchVoices.length + index;
+                option.value = sortedFrenchVoices.length + index;
                 option.textContent = `${voice.name} (${voice.lang})`;
                 voiceSelect.appendChild(option);
             });
+            
+            // Set default to best French voice if found
+            if (defaultVoiceIndex >= 0) {
+                voiceSelect.value = defaultVoiceIndex;
+            }
         }
 
         // Initialize voices
@@ -2657,9 +2712,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             // Populate scene dropdown with available scenes
             populateSceneFilter();
             
+            // Sort all characters by text order first
+            const sortedCharacters = sortCharactersByTextOrder(characters);
+            
             // Filter characters by actor and optionally by scene
-            let actorTexts = characters.filter(c => c.actor === rehearsingActor);
-            let otherTexts = characters.filter(c => c.actor !== rehearsingActor);
+            let actorTexts = sortedCharacters.filter(c => c.actor === rehearsingActor);
+            let otherTexts = sortedCharacters.filter(c => c.actor !== rehearsingActor);
             
             if (sceneFilter) {
                 actorTexts = actorTexts.filter(c => c.scene === sceneFilter);
@@ -2717,8 +2775,8 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             const sceneFilter = document.getElementById('sceneFilter');
             const currentValue = sceneFilter.value;
             
-            // Get unique scenes from all characters
-            const scenes = [...new Set(characters.map(c => c.scene || 'SCÈNE 1'))].sort();
+            // Get unique scenes from all characters and sort them
+            const scenes = sortScenes([...new Set(characters.map(c => c.scene || 'SCÈNE 1'))]);
             
             sceneFilter.innerHTML = '<option value="">Toutes les scènes</option>';
             scenes.forEach(scene => {
@@ -3118,6 +3176,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             const rate = parseFloat(document.getElementById('speechRate').value);
             utterance.rate = rate;
             
+            // Set pitch for more natural sound (slightly higher than default)
+            utterance.pitch = 1.1;
+            
+            // Set volume to max
+            utterance.volume = 1.0;
+            
             const voiceIndex = document.getElementById('voiceSelect').value;
             if (voiceIndex !== '') {
                 utterance.voice = availableVoices[parseInt(voiceIndex)];
@@ -3213,49 +3277,176 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 </div>
             `;
             
-            // Simple approach: just show all assignments in order
-            // Group by scene
-            const sceneGroups = {};
+            // Build comparison by parsing the full text and matching with assignments
+            if (!fullTextContent || !fullTextContent.trim()) {
+                content.innerHTML = '<p class="text-gray-400 italic">Aucune attribution à afficher.</p>';
+                return;
+            }
+            
+            const lines = fullTextContent.split('\n');
+            const segments = [];
+            let currentScene = 'SCÈNE 1';
+            let currentUnassigned = '';
+            
+            // Scene detection pattern
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            // Character pattern  
+            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
+            
+            // Build a map of assigned text positions for quick lookup
+            const assignedMap = new Map();
             filteredCharacters.forEach(char => {
-                const scene = char.scene || 'SCÈNE 1';
-                if (!sceneGroups[scene]) {
-                    sceneGroups[scene] = [];
+                const cleanText = removeCharacterNameFromText(char.text, char.name).trim();
+                const pos = fullTextContent.indexOf(char.text);
+                if (pos !== -1) {
+                    assignedMap.set(pos, {
+                        char,
+                        cleanText,
+                        endPos: pos + char.text.length
+                    });
                 }
-                sceneGroups[scene].push(char);
             });
+            
+            // Parse line by line
+            let currentPos = 0;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmedLine = line.trim();
+                
+                // Update position
+                const lineStart = currentPos;
+                currentPos += line.length + 1; // +1 for newline
+                
+                if (!trimmedLine) continue;
+                
+                // Check for scene marker
+                const sceneMatch = trimmedLine.match(scenePattern);
+                if (sceneMatch) {
+                    // Save unassigned before scene change
+                    if (currentUnassigned.trim()) {
+                        segments.push({
+                            type: 'unassigned',
+                            scene: currentScene,
+                            text: currentUnassigned.trim()
+                        });
+                        currentUnassigned = '';
+                    }
+                    currentScene = trimmedLine;
+                    continue;
+                }
+                
+                // Check if this line is part of an assignment
+                let isAssigned = false;
+                for (const [pos, data] of assignedMap.entries()) {
+                    if (lineStart >= pos && lineStart < data.endPos) {
+                        // This line is part of an assignment
+                        // Save previous unassigned
+                        if (currentUnassigned.trim()) {
+                            segments.push({
+                                type: 'unassigned',
+                                scene: currentScene,
+                                text: currentUnassigned.trim()
+                            });
+                            currentUnassigned = '';
+                        }
+                        
+                        // Add assignment (only once)
+                        if (!segments.find(s => s.type === 'assigned' && s.char === data.char)) {
+                            segments.push({
+                                type: 'assigned',
+                                scene: currentScene,
+                                char: data.char,
+                                cleanText: data.cleanText
+                            });
+                        }
+                        
+                        isAssigned = true;
+                        
+                        // Skip to end of assignment
+                        while (i < lines.length && currentPos < data.endPos) {
+                            i++;
+                            if (i < lines.length) {
+                                currentPos += lines[i].length + 1;
+                            }
+                        }
+                        i--; // Adjust because loop will increment
+                        break;
+                    }
+                }
+                
+                if (!isAssigned) {
+                    currentUnassigned += (currentUnassigned ? '\n' : '') + line;
+                }
+            }
+            
+            // Add final unassigned segment
+            if (currentUnassigned.trim()) {
+                segments.push({
+                    type: 'unassigned',
+                    scene: currentScene,
+                    text: currentUnassigned.trim()
+                });
+            }
+            
+            // Filter by scene if needed
+            const filteredSegments = sceneFilter 
+                ? segments.filter(s => s.scene === sceneFilter)
+                : segments;
             
             // Display segments
             let html = '';
+            let displayedScene = '';
             
-            for (const [sceneName, sceneChars] of Object.entries(sceneGroups)) {
-                html += `
-                    <div class="text-xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2 mt-4 mb-2">
-                        ${sceneName}
-                    </div>
-                `;
+            filteredSegments.forEach(segment => {
+                // Show scene header
+                if (segment.scene !== displayedScene) {
+                    html += `
+                        <div class="text-xl font-bold text-gray-700 border-b-2 border-gray-300 pb-2 mt-4 mb-2">
+                            ${segment.scene}
+                        </div>
+                    `;
+                    displayedScene = segment.scene;
+                }
                 
-                sceneChars.forEach(char => {
-                    const cleanedText = removeCharacterNameFromText(char.text, char.name);
-                    const color = getActorColor(char.actor);
-                    const wordCount = countWords(cleanedText);
+                if (segment.type === 'assigned') {
+                    const color = getActorColor(segment.char.actor);
+                    const wordCount = countWords(segment.cleanText);
                     
                     html += `
                         <div style="background-color: ${color}22; border-left: 4px solid ${color}; padding: 12px; margin: 8px 0; border-radius: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <div style="font-weight: bold; color: ${color};">
-                                    ✅ ${char.name} (${char.actor})
+                                    ✅ ${segment.char.name} (${segment.char.actor})
                                 </div>
                                 <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                                     ${wordCount} mots
                                 </span>
                             </div>
-                            <div style="color: #1f2937;">${cleanedText.replace(/\n/g, '<br>')}</div>
+                            <div style="color: #1f2937;">${segment.cleanText.replace(/\n/g, '<br>')}</div>
                         </div>
                     `;
-                });
-            }
+                } else {
+                    const wordCount = countWords(segment.text);
+                    if (wordCount > 0) {
+                        html += `
+                            <div style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 12px; margin: 8px 0; border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <div style="font-weight: bold; color: #6b7280;">
+                                        ⏳ Texte non attribué
+                                    </div>
+                                    <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                        ${wordCount} mots
+                                    </span>
+                                </div>
+                                <div style="color: #4b5563; font-style: italic;">${segment.text.replace(/\n/g, '<br>')}</div>
+                            </div>
+                        `;
+                    }
+                }
+            });
             
-            content.innerHTML = html || '<p class="text-gray-400 italic">Aucune attribution à afficher pour cette scène.</p>';
+            content.innerHTML = html || '<p class="text-gray-400 italic">Aucun contenu à afficher.</p>';
         }
 
         function updateStats() {
