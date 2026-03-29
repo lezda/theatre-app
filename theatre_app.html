@@ -294,7 +294,10 @@
     </div>
 
     <div class="container mx-auto p-4 max-w-6xl">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6">🎭 Assistant de Répétition Théâtrale</h1>
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.1.0</span>
+        </div>
         
         <!-- Tabs -->
         <div class="flex space-x-2 mb-6 border-b overflow-x-auto">
@@ -2065,8 +2068,9 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
-            // Detect scene from context
-            const detectedScene = detectSceneFromContext(selectedText);
+            // Detect scene from context and enrich with part
+            let detectedScene = detectSceneFromContext(selectedText);
+            detectedScene = enrichSceneWithPart(detectedScene);
             console.log(`✅ Assigning chorus to scene: ${detectedScene}`);
             
             // Add the same text for each selected actor
@@ -2124,7 +2128,11 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             }
             
             // Detect scene from context
-            const detectedScene = detectSceneFromContext(selectedText);
+            let detectedScene = detectSceneFromContext(selectedText);
+            
+            // Smart scene naming: add part prefix if needed
+            detectedScene = enrichSceneWithPart(detectedScene);
+            
             console.log(`✅ Assigning to scene: ${detectedScene}`);
             
             // Add to characters array
@@ -2158,6 +2166,63 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             // Save to Firebase
             saveToFirebase();
             saveToLocalStorage();
+        }
+        
+        function enrichSceneWithPart(sceneName) {
+            // If scene already has a part prefix, keep it
+            const normalized = sceneName.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (normalized.includes('PARTIE') || normalized.includes('INTERMEDE') || 
+                normalized.includes('PROLOGUE') || normalized.includes('EPILOGUE')) {
+                return sceneName;
+            }
+            
+            // Detect which part we're in based on position in full text
+            if (!fullTextContent || !selectedText) return sceneName;
+            
+            const selectionPosition = fullTextContent.indexOf(selectedText);
+            if (selectionPosition === -1) return sceneName;
+            
+            // Find all structural markers in the text
+            const textBeforeSelection = fullTextContent.substring(0, selectionPosition);
+            
+            // Find positions of all part markers
+            const premierePartiePos = textBeforeSelection.search(/(PREMI[EÈÉ]RE|1[EÈÉ]?RE)\s+PARTIE/i);
+            const intermededPos = textBeforeSelection.search(/INTERM[EÈÉ]DE/i);
+            const deuxiemePartiePos = textBeforeSelection.search(/(DEUXI[EÈÉ]ME|SECONDE|2[EÈÉ]?ME)\s+PARTIE/i);
+            const troisiemePartiePos = textBeforeSelection.search(/(TROISI[EÈÉ]ME|3[EÈÉ]?ME)\s+PARTIE/i);
+            
+            // Determine which is the LAST marker before selection
+            let lastMarker = 'PREMIÈRE PARTIE';
+            let lastPos = premierePartiePos;
+            
+            if (intermededPos > lastPos) {
+                lastMarker = 'INTERMÈDE';
+                lastPos = intermededPos;
+            }
+            
+            if (deuxiemePartiePos > lastPos) {
+                lastMarker = 'DEUXIÈME PARTIE';
+                lastPos = deuxiemePartiePos;
+            }
+            
+            if (troisiemePartiePos > lastPos) {
+                lastMarker = 'TROISIÈME PARTIE';
+                lastPos = troisiemePartiePos;
+            }
+            
+            // Add prefix based on last marker
+            if (lastMarker === 'PREMIÈRE PARTIE' && premierePartiePos !== -1) {
+                return `PREMIÈRE PARTIE - ${sceneName}`;
+            } else if (lastMarker === 'INTERMÈDE') {
+                return `INTERMÈDE - ${sceneName}`;
+            } else if (lastMarker === 'DEUXIÈME PARTIE') {
+                return `DEUXIÈME PARTIE - ${sceneName}`;
+            } else if (lastMarker === 'TROISIÈME PARTIE') {
+                return `TROISIÈME PARTIE - ${sceneName}`;
+            }
+            
+            // Default: no prefix (before any part marker)
+            return sceneName;
         }
 
         function closeContextMenu() {
@@ -2628,16 +2693,19 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     // Handle different scene formats
                     if (normalized.includes('PROLOGUE')) return 0;
                     
-                    // PREMIÈRE PARTIE (with or without accent)
-                    if (normalized.includes('PREMIERE PARTIE') || normalized.includes('PREMIERE')) {
+                    // PREMIÈRE PARTIE - SCÈNE X
+                    if (normalized.includes('PREMIERE PARTIE')) {
                         const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 1000 + parseInt(match[1]) : 1000;
                     }
                     
-                    // INTERMÈDE (with or without accent)
-                    if (normalized.includes('INTERMEDE')) return 5000;
+                    // INTERMÈDE - SCÈNE X (5000-5999 range)
+                    if (normalized.includes('INTERMEDE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
+                        return match ? 5000 + parseInt(match[1]) : 5000;
+                    }
                     
-                    // DEUXIÈME PARTIE or SECONDE PARTIE (with or without accents)
+                    // DEUXIÈME PARTIE - SCÈNE X (10000+ range)
                     if (normalized.includes('DEUXIEME PARTIE') || 
                         normalized.includes('SECONDE PARTIE') || 
                         normalized.includes('2E PARTIE') ||
@@ -2646,7 +2714,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                         return match ? 10000 + parseInt(match[1]) : 10000;
                     }
                     
-                    // TROISIÈME PARTIE (with or without accent)
+                    // TROISIÈME PARTIE - SCÈNE X (15000+ range)
                     if (normalized.includes('TROISIEME PARTIE') || 
                         normalized.includes('3E PARTIE') ||
                         normalized.includes('3EME PARTIE')) {
@@ -2654,10 +2722,10 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                         return match ? 15000 + parseInt(match[1]) : 15000;
                     }
                     
-                    // ÉPILOGUE (with or without accent)
+                    // ÉPILOGUE
                     if (normalized.includes('EPILOGUE')) return 20000;
                     
-                    // Default: extract number
+                    // Default: extract number (for scenes without part prefix)
                     const match = sceneName.match(/(\d+)/);
                     return match ? parseInt(match[1]) : 0;
                 };
@@ -2696,12 +2764,15 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     
                     if (normalized.includes('PROLOGUE')) return 0;
                     
-                    if (normalized.includes('PREMIERE PARTIE') || normalized.includes('PREMIERE')) {
+                    if (normalized.includes('PREMIERE PARTIE')) {
                         const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 1000 + parseInt(match[1]) : 1000;
                     }
                     
-                    if (normalized.includes('INTERMEDE')) return 5000;
+                    if (normalized.includes('INTERMEDE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
+                        return match ? 5000 + parseInt(match[1]) : 5000;
+                    }
                     
                     if (normalized.includes('DEUXIEME PARTIE') || 
                         normalized.includes('SECONDE PARTIE') || 
