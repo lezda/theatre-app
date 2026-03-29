@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.5</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.6</span>
         </div>
         
         <!-- Tabs -->
@@ -3481,9 +3481,9 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return scenePositions[0]?.name || 'SCÈNE 1';
             };
             
-            // Get all assigned texts with their positions
+            // Get all assigned texts with their positions (USE ALL CHARACTERS, NOT FILTERED)
             const assignedPositions = [];
-            filteredCharacters.forEach(char => {
+            characters.forEach(char => {
                 const cleanText = removeCharacterNameFromText(char.text, char.name).trim();
                 
                 // Try multiple ways to find the text in fullTextContent
