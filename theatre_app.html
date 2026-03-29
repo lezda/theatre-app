@@ -2619,22 +2619,43 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 
                 // Extract scene numbers for proper sorting
                 const getSceneOrder = (sceneName) => {
+                    // Normalize scene name (remove accents for comparison)
+                    const normalized = sceneName
+                        .toUpperCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, ''); // Remove diacritics
+                    
                     // Handle different scene formats
-                    if (sceneName.includes('PROLOGUE')) return 0;
-                    if (sceneName.includes('PREMIÈRE PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    if (normalized.includes('PROLOGUE')) return 0;
+                    
+                    // PREMIÈRE PARTIE (with or without accent)
+                    if (normalized.includes('PREMIERE PARTIE') || normalized.includes('PREMIERE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 1000 + parseInt(match[1]) : 1000;
                     }
-                    if (sceneName.includes('INTERMÈDE') || sceneName.includes('INTERMEDE')) return 5000;
-                    if (sceneName.includes('DEUXIÈME PARTIE') || sceneName.includes('SECONDE PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    
+                    // INTERMÈDE (with or without accent)
+                    if (normalized.includes('INTERMEDE')) return 5000;
+                    
+                    // DEUXIÈME PARTIE or SECONDE PARTIE (with or without accents)
+                    if (normalized.includes('DEUXIEME PARTIE') || 
+                        normalized.includes('SECONDE PARTIE') || 
+                        normalized.includes('2E PARTIE') ||
+                        normalized.includes('2EME PARTIE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 10000 + parseInt(match[1]) : 10000;
                     }
-                    if (sceneName.includes('TROISIÈME PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    
+                    // TROISIÈME PARTIE (with or without accent)
+                    if (normalized.includes('TROISIEME PARTIE') || 
+                        normalized.includes('3E PARTIE') ||
+                        normalized.includes('3EME PARTIE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 15000 + parseInt(match[1]) : 15000;
                     }
-                    if (sceneName.includes('ÉPILOGUE') || sceneName.includes('EPILOGUE')) return 20000;
+                    
+                    // ÉPILOGUE (with or without accent)
+                    if (normalized.includes('EPILOGUE')) return 20000;
                     
                     // Default: extract number
                     const match = sceneName.match(/(\d+)/);
@@ -2667,21 +2688,38 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             // Sort scene names in logical order
             return [...scenes].sort((a, b) => {
                 const getSceneOrder = (sceneName) => {
-                    if (sceneName.includes('PROLOGUE')) return 0;
-                    if (sceneName.includes('PREMIÈRE PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    // Normalize scene name (remove accents for comparison)
+                    const normalized = sceneName
+                        .toUpperCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, ''); // Remove diacritics
+                    
+                    if (normalized.includes('PROLOGUE')) return 0;
+                    
+                    if (normalized.includes('PREMIERE PARTIE') || normalized.includes('PREMIERE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 1000 + parseInt(match[1]) : 1000;
                     }
-                    if (sceneName.includes('INTERMÈDE') || sceneName.includes('INTERMEDE')) return 5000;
-                    if (sceneName.includes('DEUXIÈME PARTIE') || sceneName.includes('SECONDE PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    
+                    if (normalized.includes('INTERMEDE')) return 5000;
+                    
+                    if (normalized.includes('DEUXIEME PARTIE') || 
+                        normalized.includes('SECONDE PARTIE') || 
+                        normalized.includes('2E PARTIE') ||
+                        normalized.includes('2EME PARTIE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 10000 + parseInt(match[1]) : 10000;
                     }
-                    if (sceneName.includes('TROISIÈME PARTIE')) {
-                        const match = sceneName.match(/SCÈNE\s*(\d+)/i);
+                    
+                    if (normalized.includes('TROISIEME PARTIE') || 
+                        normalized.includes('3E PARTIE') ||
+                        normalized.includes('3EME PARTIE')) {
+                        const match = sceneName.match(/SC[EÈÉ]NE\s*(\d+)/i);
                         return match ? 15000 + parseInt(match[1]) : 15000;
                     }
-                    if (sceneName.includes('ÉPILOGUE') || sceneName.includes('EPILOGUE')) return 20000;
+                    
+                    if (normalized.includes('EPILOGUE')) return 20000;
+                    
                     const match = sceneName.match(/(\d+)/);
                     return match ? parseInt(match[1]) : 0;
                 };
