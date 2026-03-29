@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.1</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.2</span>
         </div>
         
         <!-- Tabs -->
@@ -3461,125 +3461,84 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
-            const lines = fullTextContent.split('\n');
+            // Simple approach: show all assigned texts, then calculate unassigned
             const segments = [];
-            let currentScene = 'SCÈNE 1';
-            let currentUnassigned = '';
+            let currentScene = '';
             
-            // Scene detection pattern
-            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
-            
-            // Character pattern  
-            const characterPattern = /^([A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ][A-ZÀÂÄÇÈÉÊËÎÏÔÙÛÜ\s'-]+)\s*[:.-]\s*(.*)$/;
-            
-            // Build a map of assigned text positions for quick lookup
-            const assignedMap = new Map();
-            const assignedTexts = new Set(); // Track unique assigned texts
-            
+            // Get all assigned texts with their positions
+            const assignedPositions = [];
             filteredCharacters.forEach(char => {
                 const cleanText = removeCharacterNameFromText(char.text, char.name).trim();
                 
-                // Try to find the cleaned text in fullTextContent
-                let pos = fullTextContent.indexOf(cleanText);
+                // Try multiple ways to find the text in fullTextContent
+                let pos = -1;
                 
-                // If not found, try with the original text (with character name)
+                // 1. Try with cleaned text
+                pos = fullTextContent.indexOf(cleanText);
+                
+                // 2. If not found, try with original text
                 if (pos === -1) {
                     pos = fullTextContent.indexOf(char.text);
                 }
                 
-                if (pos !== -1 && !assignedTexts.has(cleanText)) {
-                    const endPos = pos + (fullTextContent.substring(pos).indexOf(cleanText) !== -1 ? cleanText.length : char.text.length);
-                    
-                    assignedMap.set(pos, {
-                        char,
-                        cleanText,
-                        endPos: endPos,
-                        originalText: char.text
+                // 3. If still not found, try just first 50 characters
+                if (pos === -1) {
+                    const firstPart = cleanText.substring(0, 50);
+                    pos = fullTextContent.indexOf(firstPart);
+                }
+                
+                if (pos !== -1) {
+                    const textToMeasure = fullTextContent.indexOf(cleanText, pos) !== -1 ? cleanText : char.text;
+                    assignedPositions.push({
+                        start: pos,
+                        end: pos + textToMeasure.length,
+                        char: char,
+                        cleanText: cleanText
                     });
-                    
-                    assignedTexts.add(cleanText);
                 }
             });
             
-            // Parse line by line
-            let currentPos = 0;
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const trimmedLine = line.trim();
-                
-                // Update position
-                const lineStart = currentPos;
-                currentPos += line.length + 1; // +1 for newline
-                
-                if (!trimmedLine) continue;
-                
-                // Check for scene marker
-                const sceneMatch = trimmedLine.match(scenePattern);
-                if (sceneMatch) {
-                    // Save unassigned before scene change
-                    if (currentUnassigned.trim()) {
+            // Sort by position
+            assignedPositions.sort((a, b) => a.start - b.start);
+            
+            // Build segments: assigned + gaps (unassigned)
+            let lastEnd = 0;
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            assignedPositions.forEach((assigned, index) => {
+                // Add unassigned text before this assignment
+                if (assigned.start > lastEnd) {
+                    const unassignedText = fullTextContent.substring(lastEnd, assigned.start).trim();
+                    if (unassignedText.length > 0) {
                         segments.push({
                             type: 'unassigned',
-                            scene: currentScene,
-                            text: currentUnassigned.trim()
+                            text: unassignedText,
+                            scene: assigned.char.scene || currentScene
                         });
-                        currentUnassigned = '';
-                    }
-                    currentScene = trimmedLine;
-                    continue;
-                }
-                
-                // Check if this line is part of an assignment
-                let isAssigned = false;
-                for (const [pos, data] of assignedMap.entries()) {
-                    if (lineStart >= pos && lineStart < data.endPos) {
-                        // This line is part of an assignment
-                        // Save previous unassigned
-                        if (currentUnassigned.trim()) {
-                            segments.push({
-                                type: 'unassigned',
-                                scene: currentScene,
-                                text: currentUnassigned.trim()
-                            });
-                            currentUnassigned = '';
-                        }
-                        
-                        // Add assignment (only once)
-                        if (!segments.find(s => s.type === 'assigned' && s.char === data.char)) {
-                            segments.push({
-                                type: 'assigned',
-                                scene: currentScene,
-                                char: data.char,
-                                cleanText: data.cleanText
-                            });
-                        }
-                        
-                        isAssigned = true;
-                        
-                        // Skip to end of assignment
-                        while (i < lines.length && currentPos < data.endPos) {
-                            i++;
-                            if (i < lines.length) {
-                                currentPos += lines[i].length + 1;
-                            }
-                        }
-                        i--; // Adjust because loop will increment
-                        break;
                     }
                 }
                 
-                if (!isAssigned) {
-                    currentUnassigned += (currentUnassigned ? '\n' : '') + line;
-                }
-            }
+                // Add assigned text
+                segments.push({
+                    type: 'assigned',
+                    char: assigned.char,
+                    cleanText: assigned.cleanText,
+                    scene: assigned.char.scene || currentScene
+                });
+                
+                lastEnd = assigned.end;
+            });
             
             // Add final unassigned segment
-            if (currentUnassigned.trim()) {
-                segments.push({
-                    type: 'unassigned',
-                    scene: currentScene,
-                    text: currentUnassigned.trim()
-                });
+            if (lastEnd < fullTextContent.length) {
+                const unassignedText = fullTextContent.substring(lastEnd).trim();
+                if (unassignedText.length > 0) {
+                    segments.push({
+                        type: 'unassigned',
+                        text: unassignedText,
+                        scene: currentScene
+                    });
+                }
             }
             
             // Filter by scene if needed
