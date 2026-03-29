@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.0</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.1</span>
         </div>
         
         <!-- Tabs -->
@@ -3474,15 +3474,30 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             
             // Build a map of assigned text positions for quick lookup
             const assignedMap = new Map();
+            const assignedTexts = new Set(); // Track unique assigned texts
+            
             filteredCharacters.forEach(char => {
                 const cleanText = removeCharacterNameFromText(char.text, char.name).trim();
-                const pos = fullTextContent.indexOf(char.text);
-                if (pos !== -1) {
+                
+                // Try to find the cleaned text in fullTextContent
+                let pos = fullTextContent.indexOf(cleanText);
+                
+                // If not found, try with the original text (with character name)
+                if (pos === -1) {
+                    pos = fullTextContent.indexOf(char.text);
+                }
+                
+                if (pos !== -1 && !assignedTexts.has(cleanText)) {
+                    const endPos = pos + (fullTextContent.substring(pos).indexOf(cleanText) !== -1 ? cleanText.length : char.text.length);
+                    
                     assignedMap.set(pos, {
                         char,
                         cleanText,
-                        endPos: pos + char.text.length
+                        endPos: endPos,
+                        originalText: char.text
                     });
+                    
+                    assignedTexts.add(cleanText);
                 }
             });
             
