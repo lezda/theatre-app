@@ -2065,8 +2065,9 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
-            // Detect scene from context
-            const detectedScene = detectSceneFromContext(selectedText);
+            // Detect scene from context and enrich with part
+            let detectedScene = detectSceneFromContext(selectedText);
+            detectedScene = enrichSceneWithPart(detectedScene);
             console.log(`✅ Assigning chorus to scene: ${detectedScene}`);
             
             // Add the same text for each selected actor
@@ -2124,7 +2125,11 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             }
             
             // Detect scene from context
-            const detectedScene = detectSceneFromContext(selectedText);
+            let detectedScene = detectSceneFromContext(selectedText);
+            
+            // Smart scene naming: add part prefix if needed
+            detectedScene = enrichSceneWithPart(detectedScene);
+            
             console.log(`✅ Assigning to scene: ${detectedScene}`);
             
             // Add to characters array
@@ -2158,6 +2163,42 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             // Save to Firebase
             saveToFirebase();
             saveToLocalStorage();
+        }
+        
+        function enrichSceneWithPart(sceneName) {
+            // If scene already has a part prefix, keep it
+            const normalized = sceneName.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (normalized.includes('PARTIE') || normalized.includes('INTERMEDE') || 
+                normalized.includes('PROLOGUE') || normalized.includes('EPILOGUE')) {
+                return sceneName;
+            }
+            
+            // Detect which part we're in based on position in full text
+            if (!fullTextContent || !selectedText) return sceneName;
+            
+            const selectionPosition = fullTextContent.indexOf(selectedText);
+            if (selectionPosition === -1) return sceneName;
+            
+            // Find all structural markers in the text
+            const textBeforeSelection = fullTextContent.substring(0, selectionPosition);
+            
+            // Check for INTERMÈDE or other part markers before the selection
+            const hasIntermede = /INTERM[EÈÉ]DE/i.test(textBeforeSelection);
+            const hasDeuxiemPartie = /(DEUXI[EÈÉ]ME|SECONDE|2[EÈÉ]?ME)\s+PARTIE/i.test(textBeforeSelection);
+            const hasTroisiemPartie = /(TROISI[EÈÉ]ME|3[EÈÉ]?ME)\s+PARTIE/i.test(textBeforeSelection);
+            const hasPremierePartie = /(PREMI[EÈÉ]RE|1[EÈÉ]?RE)\s+PARTIE/i.test(textBeforeSelection);
+            
+            // Determine which part we're in
+            if (hasTroisiemPartie) {
+                return `TROISIÈME PARTIE - ${sceneName}`;
+            } else if (hasDeuxiemPartie || hasIntermede) {
+                return `DEUXIÈME PARTIE - ${sceneName}`;
+            } else if (hasPremierePartie) {
+                return `PREMIÈRE PARTIE - ${sceneName}`;
+            }
+            
+            // Default: assume first part
+            return sceneName;
         }
 
         function closeContextMenu() {
