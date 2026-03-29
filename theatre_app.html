@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.2</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.3</span>
         </div>
         
         <!-- Tabs -->
@@ -3461,9 +3461,34 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 return;
             }
             
-            // Simple approach: show all assigned texts, then calculate unassigned
-            const segments = [];
-            let currentScene = '';
+            // Scene pattern for detection
+            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
+            
+            // First pass: detect all scenes and their positions in the text
+            const scenePositions = [];
+            const lines = fullTextContent.split('\n');
+            let currentPos = 0;
+            
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (scenePattern.test(trimmed)) {
+                    scenePositions.push({
+                        name: trimmed,
+                        position: currentPos
+                    });
+                }
+                currentPos += line.length + 1; // +1 for newline
+            });
+            
+            // Helper function to find which scene a position belongs to
+            const findSceneAtPosition = (pos) => {
+                for (let i = scenePositions.length - 1; i >= 0; i--) {
+                    if (pos >= scenePositions[i].position) {
+                        return scenePositions[i].name;
+                    }
+                }
+                return scenePositions[0]?.name || 'SCÈNE 1';
+            };
             
             // Get all assigned texts with their positions
             const assignedPositions = [];
@@ -3502,18 +3527,20 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             assignedPositions.sort((a, b) => a.start - b.start);
             
             // Build segments: assigned + gaps (unassigned)
+            const segments = [];
             let lastEnd = 0;
-            const scenePattern = /^(PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|INTERMEDE|PROLOGUE|ÉPILOGUE|EPILOGUE|ACTE|SCÈNE|SCENE|PARTIE)(\s*-?\s*(SCÈNE|SCENE)\s*(\d+|[IVX]+))?\s*(\d+|[IVX]+|[0-9]+)?\s*$/i;
             
             assignedPositions.forEach((assigned, index) => {
                 // Add unassigned text before this assignment
                 if (assigned.start > lastEnd) {
                     const unassignedText = fullTextContent.substring(lastEnd, assigned.start).trim();
                     if (unassignedText.length > 0) {
+                        // Detect which scene this unassigned text belongs to
+                        const sceneForUnassigned = findSceneAtPosition(lastEnd);
                         segments.push({
                             type: 'unassigned',
                             text: unassignedText,
-                            scene: assigned.char.scene || currentScene
+                            scene: sceneForUnassigned
                         });
                     }
                 }
@@ -3523,7 +3550,7 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     type: 'assigned',
                     char: assigned.char,
                     cleanText: assigned.cleanText,
-                    scene: assigned.char.scene || currentScene
+                    scene: assigned.char.scene
                 });
                 
                 lastEnd = assigned.end;
@@ -3533,10 +3560,11 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             if (lastEnd < fullTextContent.length) {
                 const unassignedText = fullTextContent.substring(lastEnd).trim();
                 if (unassignedText.length > 0) {
+                    const sceneForUnassigned = findSceneAtPosition(lastEnd);
                     segments.push({
                         type: 'unassigned',
                         text: unassignedText,
-                        scene: currentScene
+                        scene: sceneForUnassigned
                     });
                 }
             }
