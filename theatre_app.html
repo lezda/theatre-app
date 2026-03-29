@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.1.0</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.0</span>
         </div>
         
         <!-- Tabs -->
@@ -453,6 +453,9 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold">🎨 Visualisation du texte avec attributions</h2>
                     <div class="flex gap-2">
+                        <button onclick="fixSceneNames()" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600" title="Renomme automatiquement les scènes selon leur position dans le texte">
+                            🔄 Corriger les scènes
+                        </button>
                         <button onclick="exportToPDF()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
                             📄 Exporter PDF
                         </button>
@@ -2223,6 +2226,72 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             
             // Default: no prefix (before any part marker)
             return sceneName;
+        }
+        
+        function fixSceneNames() {
+            if (!fullTextContent) {
+                alert('⚠️ Veuillez d\'abord charger le texte complet dans l\'onglet "Texte Complet"');
+                return;
+            }
+            
+            if (characters.length === 0) {
+                alert('⚠️ Aucune attribution à corriger');
+                return;
+            }
+            
+            const confirmFix = confirm(
+                `🔄 Correction automatique des scènes\n\n` +
+                `Cette action va renommer automatiquement toutes vos scènes selon leur position dans le texte.\n\n` +
+                `Exemple:\n` +
+                `• "SCÈNE 1" → "PREMIÈRE PARTIE - SCÈNE 1"\n` +
+                `• "SCÈNE 1" (après INTERMÈDE) → "INTERMÈDE - SCÈNE 1"\n` +
+                `• "SCÈNE 1" (après DEUXIÈME PARTIE) → "DEUXIÈME PARTIE - SCÈNE 1"\n\n` +
+                `Nombre d'attributions: ${characters.length}\n\n` +
+                `Voulez-vous continuer ?`
+            );
+            
+            if (!confirmFix) return;
+            
+            let fixedCount = 0;
+            const originalSelectedText = selectedText; // Save original
+            
+            // Process each character assignment
+            characters.forEach((char, index) => {
+                // Temporarily set selectedText for enrichSceneWithPart
+                selectedText = char.text;
+                
+                const oldScene = char.scene || 'SCÈNE 1';
+                const newScene = enrichSceneWithPart(oldScene);
+                
+                if (oldScene !== newScene) {
+                    console.log(`✅ Fixed: "${oldScene}" → "${newScene}"`);
+                    char.scene = newScene;
+                    
+                    // Also update in assignments array if it exists
+                    if (assignments[index]) {
+                        assignments[index].scene = newScene;
+                    }
+                    
+                    fixedCount++;
+                }
+            });
+            
+            // Restore original selectedText
+            selectedText = originalSelectedText;
+            
+            // Save to Firebase and local storage
+            saveToFirebase();
+            saveToLocalStorage();
+            
+            // Update all displays
+            updateVisualization();
+            updateRehearse();
+            updateComparison();
+            updateStats();
+            updateAssignmentsList();
+            updateCharactersList();
+            
+            alert(`✅ Correction terminée !\n\n${fixedCount} scène(s) renommée(s) sur ${characters.length} attribution(s).\n\nLes modifications ont été sauvegardées.`);
         }
 
         function closeContextMenu() {
