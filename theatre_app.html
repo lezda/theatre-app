@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.5</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.6</span>
         </div>
         
         <!-- Tabs -->
@@ -3526,6 +3526,87 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             });
         }
 
+        function attributeFromComparison(segmentId, sceneName, text) {
+            // Show modal to select character and actor
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <h2 class="text-2xl font-bold mb-4">➕ Attribuer ce texte</h2>
+                    
+                    <div class="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                        <div class="text-sm text-gray-600 mb-1">Scène : <strong>${sceneName}</strong></div>
+                        <div class="text-sm text-gray-800 italic">${text.substring(0, 150)}${text.length > 150 ? '...' : ''}</div>
+                    </div>
+                    
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">Nom du personnage:</label>
+                            <input type="text" id="modalCharName" placeholder="Ex: LOUIS" 
+                                   class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">Acteur:</label>
+                            <select id="modalActorSelect" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Sélectionner un acteur</option>
+                                ${actors.map(a => `<option value="${a}">${a}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3">
+                        <button onclick="confirmAttribution('${segmentId}', '${sceneName.replace(/'/g, "\\'")}', \`${text.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" 
+                                class="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                            ✅ Confirmer
+                        </button>
+                        <button onclick="this.closest('.fixed').remove()" 
+                                class="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">
+                            ❌ Annuler
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Focus on character name input
+            setTimeout(() => document.getElementById('modalCharName').focus(), 100);
+        }
+        
+        function confirmAttribution(segmentId, sceneName, text) {
+            const charName = document.getElementById('modalCharName').value.trim();
+            const actor = document.getElementById('modalActorSelect').value;
+            
+            if (!charName || !actor) {
+                alert('Veuillez remplir tous les champs');
+                return;
+            }
+            
+            // Add to characters array
+            const newChar = {
+                name: charName,
+                actor: actor,
+                scene: sceneName,
+                text: text
+            };
+            
+            characters.push(newChar);
+            
+            // Save
+            saveToLocalStorage();
+            saveToFirebase();
+            
+            // Update UI
+            updateCharactersList();
+            updateComparison();
+            updateVisualization();
+            updateStats();
+            
+            // Close modal
+            document.querySelector('.fixed.inset-0').remove();
+            
+            showNotification('✅ Texte attribué avec succès !', 'success');
+        }
+        
         function updateComparison() {
             const content = document.getElementById('comparisonContent');
             const statsDiv = document.getElementById('comparisonStats');
@@ -3788,18 +3869,28 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     `;
                 } else {
                     const wordCount = countWords(segment.text);
-                    if (wordCount > 0) {
+                    // Check if this is a scene marker (should be excluded from unassigned text)
+                    const isSceneMarker = /^(PROLOGUE|ÉPILOGUE|EPILOGUE|PREMIÈRE PARTIE|DEUXIÈME PARTIE|SECONDE PARTIE|TROISIÈME PARTIE|INTERMÈDE|SCÈNE|SCENE)/i.test(segment.text.trim());
+                    
+                    if (wordCount > 0 && !isSceneMarker) {
+                        const segmentId = `unassigned_${Math.random().toString(36).substr(2, 9)}`;
                         html += `
                             <div style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 12px; margin: 8px 0; border-radius: 6px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                     <div style="font-weight: bold; color: #6b7280;">
                                         ⏳ Texte non attribué
                                     </div>
-                                    <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
-                                        ${wordCount} mots
-                                    </span>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                            ${wordCount} mots
+                                        </span>
+                                        <button onclick="attributeFromComparison('${segmentId}', '${segment.scene.replace(/'/g, "\\'")}', \`${segment.text.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" 
+                                                class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded">
+                                            ➕ Attribuer
+                                        </button>
+                                    </div>
                                 </div>
-                                <div style="color: #4b5563; font-style: italic;">${segment.text.replace(/\n/g, '<br>')}</div>
+                                <div id="${segmentId}" style="color: #4b5563; font-style: italic;">${segment.text.replace(/\n/g, '<br>')}</div>
                             </div>
                         `;
                     }
