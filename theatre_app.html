@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.8</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.9</span>
         </div>
         
         <!-- Tabs -->
@@ -3678,16 +3678,22 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             }
         }
         
-        function changeSceneUnassigned(segmentId, currentScene, text) {
-            const newScene = prompt('Nouvelle scène:', currentScene);
+        function attributeTextById(segmentId) {
+            const data = window[`segment_${segmentId}`];
+            if (!data) return;
+            attributeText(data.text, data.scene);
+        }
+        
+        function changeSceneUnassigned(segmentId) {
+            const data = window[`segment_${segmentId}`];
+            if (!data) return;
+            const newScene = prompt('Nouvelle scène:', data.scene);
             if (newScene && newScene.trim()) {
-                // This is cosmetic only - the text is unassigned so we just show feedback
-                // In reality, when they attribute it, they'll choose the scene
                 showNotification('💡 Attribuez d\'abord ce texte pour changer sa scène', 'info');
             }
         }
         
-        function editUnassignedText(segmentId, text) {
+        function editUnassignedText(segmentId) {
             showNotification('💡 Les textes non attribués ne peuvent pas être édités. Attribuez-les d\'abord ou modifiez le texte complet.', 'info');
         }
         
@@ -3980,8 +3986,11 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     const wordCount = countWords(segment.text);
                     if (wordCount > 0) {
                         const segmentId = `unassigned_${Math.random().toString(36).substr(2, 9)}`;
-                        const escapedText = segment.text.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
-                        const escapedScene = segment.scene.replace(/'/g, "\\'");
+                        // Store data in a global object instead of inline
+                        window[`segment_${segmentId}`] = {
+                            text: segment.text,
+                            scene: segment.scene
+                        };
                         
                         html += `
                             <div id="segment_${segmentId}" style="background-color: #f3f4f6; border-left: 4px solid #9ca3af; padding: 12px; margin: 8px 0; border-radius: 6px;">
@@ -3993,15 +4002,15 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                                         <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
                                             ${wordCount} mots
                                         </span>
-                                        <button onclick="attributeText('${escapedText}', '${escapedScene}')" 
+                                        <button onclick="attributeTextById('${segmentId}')" 
                                                 class="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded" title="Attribuer">
                                             ➕
                                         </button>
-                                        <button onclick="changeSceneUnassigned('${segmentId}', '${escapedScene}', '${escapedText}')" 
+                                        <button onclick="changeSceneUnassigned('${segmentId}')" 
                                                 class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded" title="Changer de scène">
                                             🎬
                                         </button>
-                                        <button onclick="editUnassignedText('${segmentId}', '${escapedText}')" 
+                                        <button onclick="editUnassignedText('${segmentId}')" 
                                                 class="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded" title="Éditer le texte">
                                             ✏️
                                         </button>
