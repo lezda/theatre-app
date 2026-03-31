@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.2.6</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.0</span>
         </div>
         
         <!-- Tabs -->
@@ -318,6 +318,9 @@
             </button>
             <button onclick="switchTab('stats')" id="tab-stats" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
                 Statistiques
+            </button>
+            <button onclick="switchTab('debug')" id="tab-debug" class="px-4 py-2 font-semibold text-gray-600 hover:text-blue-600 whitespace-nowrap">
+                🔍 Debug
             </button>
         </div>
 
@@ -660,6 +663,94 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
             <div class="bg-white rounded-lg shadow p-6">
                 <h2 class="text-xl font-bold mb-4">Statistiques par Acteur</h2>
                 <div id="statsList" class="space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Debug Tab -->
+        <div id="content-debug" class="hidden space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">🔍 Outil de débogage</h2>
+                    <button onclick="refreshDebugData()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        🔄 Actualiser
+                    </button>
+                </div>
+
+                <!-- Data Source Selection -->
+                <div class="mb-4">
+                    <label class="font-semibold">Source de données :</label>
+                    <div class="flex gap-4 mt-2">
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="debugSource" value="memory" checked onchange="refreshDebugData()">
+                            <span>Mémoire (JavaScript)</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="debugSource" value="localStorage" onchange="refreshDebugData()">
+                            <span>localStorage</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="debugSource" value="firebase" onchange="refreshDebugData()">
+                            <span>Firebase</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Stats Summary -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                        <div class="text-sm font-semibold text-blue-900 mb-1">📦 Acteurs</div>
+                        <div class="text-2xl font-bold text-blue-700" id="debugActorsCount">0</div>
+                    </div>
+                    <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                        <div class="text-sm font-semibold text-green-900 mb-1">🎭 Attributions</div>
+                        <div class="text-2xl font-bold text-green-700" id="debugCharactersCount">0</div>
+                    </div>
+                    <div class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+                        <div class="text-sm font-semibold text-purple-900 mb-1">🎬 Scènes uniques</div>
+                        <div class="text-2xl font-bold text-purple-700" id="debugScenesCount">0</div>
+                    </div>
+                </div>
+
+                <!-- Actors Data -->
+                <div class="mb-6">
+                    <h3 class="font-bold text-lg mb-2">📦 Acteurs</h3>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <pre id="debugActorsData" class="text-sm overflow-x-auto">Chargement...</pre>
+                    </div>
+                </div>
+
+                <!-- Characters Data -->
+                <div class="mb-6">
+                    <h3 class="font-bold text-lg mb-2">🎭 Attributions (characters)</h3>
+                    <div class="mb-2">
+                        <label class="font-semibold text-sm">Filtrer par scène :</label>
+                        <select id="debugSceneFilter" onchange="refreshDebugData()" class="ml-2 px-3 py-1 border rounded">
+                            <option value="">Toutes les scènes</option>
+                        </select>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded max-h-96 overflow-y-auto">
+                        <pre id="debugCharactersData" class="text-sm overflow-x-auto">Chargement...</pre>
+                    </div>
+                </div>
+
+                <!-- Scenes Breakdown -->
+                <div class="mb-6">
+                    <h3 class="font-bold text-lg mb-2">🎬 Répartition par scène</h3>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <pre id="debugScenesBreakdown" class="text-sm overflow-x-auto">Chargement...</pre>
+                    </div>
+                </div>
+
+                <!-- Raw JSON Export -->
+                <div>
+                    <h3 class="font-bold text-lg mb-2">💾 Export JSON complet</h3>
+                    <button onclick="exportDebugJSON()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 mb-2">
+                        📥 Télécharger JSON
+                    </button>
+                    <div class="bg-gray-50 p-4 rounded max-h-96 overflow-y-auto">
+                        <pre id="debugRawJSON" class="text-xs overflow-x-auto">Chargement...</pre>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -3688,6 +3779,158 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                     </div>
                 </div>
             `).join('');
+        }
+        
+        // ============================================
+        // DEBUG FUNCTIONS
+        // ============================================
+        
+        function refreshDebugData() {
+            const source = document.querySelector('input[name="debugSource"]:checked').value;
+            const sceneFilter = document.getElementById('debugSceneFilter').value;
+            
+            let actorsData = [];
+            let charactersData = [];
+            
+            if (source === 'memory') {
+                actorsData = actors;
+                charactersData = characters;
+            } else if (source === 'localStorage') {
+                const stored = localStorage.getItem('theatreData');
+                if (stored) {
+                    const data = JSON.parse(stored);
+                    actorsData = data.actors || [];
+                    charactersData = data.characters || [];
+                } else {
+                    actorsData = [];
+                    charactersData = [];
+                }
+            } else if (source === 'firebase') {
+                // Show Firebase data
+                document.getElementById('debugActorsData').textContent = 'Chargement depuis Firebase...';
+                document.getElementById('debugCharactersData').textContent = 'Chargement depuis Firebase...';
+                
+                if (isFirebaseEnabled && db) {
+                    db.collection('theatreData').doc('main').get().then(doc => {
+                        if (doc.exists) {
+                            const data = doc.data();
+                            displayDebugData(data.actors || [], data.characters || [], sceneFilter);
+                        } else {
+                            document.getElementById('debugActorsData').textContent = 'Aucune donnée Firebase';
+                            document.getElementById('debugCharactersData').textContent = 'Aucune donnée Firebase';
+                        }
+                    }).catch(error => {
+                        document.getElementById('debugActorsData').textContent = 'Erreur: ' + error.message;
+                    });
+                    return;
+                } else {
+                    document.getElementById('debugActorsData').textContent = 'Firebase non activé';
+                    document.getElementById('debugCharactersData').textContent = 'Firebase non activé';
+                    return;
+                }
+            }
+            
+            displayDebugData(actorsData, charactersData, sceneFilter);
+        }
+        
+        function displayDebugData(actorsData, charactersData, sceneFilter) {
+            // Filter characters by scene if needed
+            let filteredChars = charactersData;
+            if (sceneFilter) {
+                filteredChars = charactersData.filter(c => c.scene === sceneFilter);
+            }
+            
+            // Update counts
+            document.getElementById('debugActorsCount').textContent = actorsData.length;
+            document.getElementById('debugCharactersCount').textContent = filteredChars.length;
+            
+            // Get unique scenes
+            const uniqueScenes = [...new Set(charactersData.map(c => c.scene || 'SCÈNE 1'))];
+            document.getElementById('debugScenesCount').textContent = uniqueScenes.length;
+            
+            // Populate scene filter dropdown
+            const sceneFilterSelect = document.getElementById('debugSceneFilter');
+            const currentValue = sceneFilterSelect.value;
+            sceneFilterSelect.innerHTML = '<option value="">Toutes les scènes</option>';
+            sortScenes(uniqueScenes).forEach(scene => {
+                const option = document.createElement('option');
+                option.value = scene;
+                option.textContent = scene;
+                sceneFilterSelect.appendChild(option);
+            });
+            if (currentValue) sceneFilterSelect.value = currentValue;
+            
+            // Display actors data
+            document.getElementById('debugActorsData').textContent = JSON.stringify(actorsData, null, 2);
+            
+            // Display characters data with details
+            const charactersDisplay = filteredChars.map((char, index) => {
+                return {
+                    index: index + 1,
+                    name: char.name,
+                    actor: char.actor,
+                    scene: char.scene || 'Non défini',
+                    textLength: char.text ? char.text.length : 0,
+                    textPreview: char.text ? char.text.substring(0, 100) + '...' : 'Vide',
+                    wordCount: char.text ? countWords(removeCharacterNameFromText(char.text, char.name)) : 0
+                };
+            });
+            document.getElementById('debugCharactersData').textContent = JSON.stringify(charactersDisplay, null, 2);
+            
+            // Scenes breakdown
+            const sceneBreakdown = {};
+            charactersData.forEach(char => {
+                const scene = char.scene || 'Non défini';
+                if (!sceneBreakdown[scene]) {
+                    sceneBreakdown[scene] = {
+                        count: 0,
+                        actors: new Set(),
+                        characters: new Set(),
+                        totalWords: 0
+                    };
+                }
+                sceneBreakdown[scene].count++;
+                sceneBreakdown[scene].actors.add(char.actor);
+                sceneBreakdown[scene].characters.add(char.name);
+                sceneBreakdown[scene].totalWords += countWords(removeCharacterNameFromText(char.text, char.name));
+            });
+            
+            const breakdownDisplay = Object.entries(sceneBreakdown).map(([scene, data]) => ({
+                scene: scene,
+                attributions: data.count,
+                acteurs: Array.from(data.actors),
+                personnages: Array.from(data.characters),
+                totalMots: data.totalWords
+            }));
+            
+            document.getElementById('debugScenesBreakdown').textContent = JSON.stringify(breakdownDisplay, null, 2);
+            
+            // Raw JSON
+            document.getElementById('debugRawJSON').textContent = JSON.stringify({
+                actors: actorsData,
+                characters: charactersData,
+                fullTextContent: fullTextContent ? `${fullTextContent.substring(0, 200)}... (${fullTextContent.length} caractères)` : 'Non chargé'
+            }, null, 2);
+        }
+        
+        function exportDebugJSON() {
+            const source = document.querySelector('input[name="debugSource"]:checked').value;
+            
+            let data = {};
+            if (source === 'memory') {
+                data = { actors, characters, fullTextContent };
+            } else if (source === 'localStorage') {
+                const stored = localStorage.getItem('theatreData');
+                data = stored ? JSON.parse(stored) : {};
+            }
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `theatre_debug_${source}_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
         
         // ============================================
