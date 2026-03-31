@@ -296,7 +296,7 @@
     <div class="container mx-auto p-4 max-w-6xl">
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-3xl font-bold text-gray-800">🎭 Assistant de Répétition Théâtrale</h1>
-            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.4</span>
+            <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">v2.3.5</span>
         </div>
         
         <!-- Tabs -->
@@ -3608,7 +3608,12 @@ OPHÉLIE: Mon seigneur, j'ai des souvenirs de vous...
                 } else if (scenePattern.test(trimmed)) {
                     // This is a scene marker - enrich with current part if needed
                     let enrichedName = trimmed;
-                    if (currentPart && !normalized.includes('PARTIE') && !normalized.includes('PROLOGUE') && !normalized.includes('EPILOGUE')) {
+                    // Only add part prefix if the scene doesn't already contain a PARTIE prefix
+                    if (currentPart && 
+                        !normalized.includes('PARTIE') && 
+                        !normalized.includes('PROLOGUE') && 
+                        !normalized.includes('EPILOGUE') &&
+                        !normalized.includes('INTERMEDE')) {
                         // Add part prefix to scene name
                         enrichedName = `${currentPart} - ${trimmed}`;
                     }
